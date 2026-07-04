@@ -2,7 +2,7 @@
 // desktop, a bottom sheet on small screens. Vanilla DOM, no framework, `akt-` class
 // namespace, colors keyed to prefers-color-scheme so it sits quietly on any host page.
 import { ApiError, createIssue, currentRoute, listIssueMaps, type IssueMapOption } from "./api";
-import { clearToken, getToken, signInUrl } from "./auth";
+import { clearToken, getToken, pickUpHandoffCode, signInUrl } from "./auth";
 import type { ResolvedConfig } from "./config";
 
 const CSS = `
@@ -71,6 +71,14 @@ export class Toolbar {
   }
 
   private async render() {
+    // A consent code can arrive AFTER the script's init-time pickup: on an SPA host, the
+    // return from /widget-auth is a soft (client-router) navigation, so the page never
+    // reloads and init never re-runs. Re-check the fragment whenever the panel opens.
+    if (!getToken() && /[#&]alkahest_code=/.test(location.hash)) {
+      this.frame(`<p class="akt-muted">Signing in…</p>`);
+      await pickUpHandoffCode(this.cfg).catch(() => false);
+      if (!this.panel) return; // closed while exchanging
+    }
     const token = getToken();
     if (!token) {
       const body = this.frame(`

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Embeddable Alkahest toolbar — file issues into your project's issue maps from the running product, mobile-first.",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

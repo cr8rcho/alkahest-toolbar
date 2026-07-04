@@ -1,6 +1,6 @@
 {
   "name": "@cr8rcho/alkahest-toolbar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Embeddable Alkahest toolbar — file issues into your project's issue maps from the running product, mobile-first.",
   "license": "MIT",
   "publishConfig": {

@@ -6,8 +6,9 @@ import { clearToken, getToken, pickUpHandoffCode, signInUrl } from "./auth";
 import type { ResolvedConfig } from "./config";
 
 const CSS = `
-.akt-btn{position:fixed;right:16px;bottom:16px;z-index:2147483000;width:48px;height:48px;border-radius:50%;border:none;cursor:pointer;background:#6366f1;color:#fff;font-size:20px;line-height:1;box-shadow:0 4px 12px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center}
+.akt-btn{position:fixed;right:16px;bottom:16px;z-index:2147483000;width:48px;height:48px;border-radius:50%;border:none;cursor:grab;background:#6366f1;color:#fff;font-size:20px;line-height:1;box-shadow:0 4px 12px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none}
 .akt-btn:hover{filter:brightness(1.1)}
+.akt-btn.akt-dragging{cursor:grabbing;transition:none}
 .akt-panel{position:fixed;right:16px;bottom:76px;z-index:2147483001;width:340px;max-width:calc(100vw - 32px);border-radius:12px;background:#fff;color:#18181b;border:1px solid #e4e4e7;box-shadow:0 12px 32px rgba(0,0,0,.25);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;flex-direction:column;overflow:hidden}
 .akt-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e4e4e7;font-weight:600}
 .akt-x{border:none;background:none;cursor:pointer;font-size:16px;color:inherit;opacity:.6;padding:2px 6px}
@@ -26,10 +27,20 @@ const CSS = `
 @media (prefers-color-scheme:dark){.akt-panel{background:#18181b;color:#fafafa;border-color:#27272a}.akt-head{border-color:#27272a}.akt-body input,.akt-body textarea,.akt-body select{border-color:#3f3f46}}
 `;
 
+// Where the button rests: snapped to the left or right edge, at `bottom` px from the
+// viewport bottom. Persisted per origin so the user's chosen spot survives reloads —
+// the whole point is dodging the host app's own floating buttons.
+const POS_KEY = "alkahest.toolbar.pos";
+type ButtonPos = { side: "left" | "right"; bottom: number };
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+
 export class Toolbar {
   private root: ShadowRoot;
   private panel: HTMLDivElement | null = null;
   private maps: IssueMapOption[] | null = null;
+  private btn: HTMLButtonElement;
+  private pos: ButtonPos = { side: "right", bottom: 16 };
+  private suppressClick = false;
 
   constructor(private cfg: ResolvedConfig) {
     // Shadow DOM keeps host-page CSS out of the toolbar and vice versa.
@@ -39,13 +50,88 @@ export class Toolbar {
     const style = document.createElement("style");
     style.textContent = CSS;
     this.root.appendChild(style);
-    const btn = document.createElement("button");
+    const btn = (this.btn = document.createElement("button"));
     btn.className = "akt-btn";
-    btn.title = "File an Alkahest issue";
+    btn.title = "File an Alkahest issue (drag to move)";
     btn.textContent = "◈";
-    btn.addEventListener("click", () => this.toggle());
+    btn.addEventListener("click", () => {
+      // A drag ends in a click on the same element — swallow it so releasing doesn't open.
+      if (this.suppressClick) { this.suppressClick = false; return; }
+      this.toggle();
+    });
     this.root.appendChild(btn);
     document.body.appendChild(host);
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(POS_KEY) || "");
+      if (saved && (saved.side === "left" || saved.side === "right") && typeof saved.bottom === "number") this.pos = saved;
+    } catch { /* default resting spot */ }
+    this.applyPos();
+    window.addEventListener("resize", () => this.applyPos());
+    this.wireDrag();
+  }
+
+  // Snap the button to its resting spot (edge + bottom offset), re-clamped to the viewport.
+  private applyPos() {
+    this.pos.bottom = clamp(this.pos.bottom, 8, window.innerHeight - 64);
+    const b = this.btn.style;
+    b.top = "auto";
+    b.bottom = this.pos.bottom + "px";
+    b.left = this.pos.side === "left" ? "16px" : "auto";
+    b.right = this.pos.side === "right" ? "16px" : "auto";
+    if (this.panel) this.placePanel();
+  }
+
+  // Drag to move (chat-head style): free while dragging, snaps to the nearer left/right
+  // edge on release. A <6px movement counts as a tap (the click handler runs toggle()).
+  private wireDrag() {
+    const btn = this.btn;
+    let sx = 0, sy = 0, startLeft = 0, startTop = 0, dragging = false;
+    btn.addEventListener("pointerdown", (e) => {
+      sx = e.clientX; sy = e.clientY;
+      const r = btn.getBoundingClientRect();
+      startLeft = r.left; startTop = r.top;
+      dragging = false;
+      btn.setPointerCapture(e.pointerId);
+    });
+    btn.addEventListener("pointermove", (e) => {
+      if (!btn.hasPointerCapture(e.pointerId)) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (!dragging && Math.hypot(dx, dy) < 6) return;
+      dragging = true;
+      btn.classList.add("akt-dragging");
+      const s = btn.style;
+      s.left = clamp(startLeft + dx, 8, window.innerWidth - 56) + "px";
+      s.top = clamp(startTop + dy, 8, window.innerHeight - 56) + "px";
+      s.right = "auto"; s.bottom = "auto";
+    });
+    btn.addEventListener("pointerup", () => {
+      if (!dragging) return;
+      dragging = false;
+      this.suppressClick = true;
+      btn.classList.remove("akt-dragging");
+      const r = btn.getBoundingClientRect();
+      this.pos = {
+        side: r.left + r.width / 2 < window.innerWidth / 2 ? "left" : "right",
+        bottom: clamp(window.innerHeight - r.bottom, 8, window.innerHeight - 64),
+      };
+      try { localStorage.setItem(POS_KEY, JSON.stringify(this.pos)); } catch { /* ignore */ }
+      this.applyPos();
+    });
+  }
+
+  // Desktop: the panel opens adjacent to the button (same edge, just above it). Mobile
+  // (≤480px) keeps the full-width bottom sheet — the CSS media query owns it, so clear
+  // any inline position there.
+  private placePanel() {
+    const p = this.panel!.style;
+    if (!window.matchMedia("(min-width: 481px)").matches) {
+      p.left = p.right = p.bottom = "";
+      return;
+    }
+    p.bottom = clamp(this.pos.bottom + 60, 16, window.innerHeight - 220) + "px";
+    p.left = this.pos.side === "left" ? "16px" : "auto";
+    p.right = this.pos.side === "right" ? "16px" : "auto";
   }
 
   private toggle() {
@@ -53,6 +139,7 @@ export class Toolbar {
     this.panel = document.createElement("div");
     this.panel.className = "akt-panel";
     this.root.appendChild(this.panel);
+    this.placePanel();
     this.render();
   }
 

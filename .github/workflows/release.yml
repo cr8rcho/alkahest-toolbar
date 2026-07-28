@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       # Guard: the release tag (vX.Y.Z) must match package.json version, so we
@@ -37,8 +37,9 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      # OIDC trusted publishing needs npm >= 11.5.1; node 20's bundled npm is older.
-      - run: npm install -g npm@latest
+      # OIDC trusted publishing needs npm >= 11.5.1 — node 24's bundled npm clears that,
+      # so no global upgrade step (`npm install -g npm@latest` broke once npm 12 raised
+      # its own engine floor above the node the job was pinned to).
 
       # No NODE_AUTH_TOKEN: npm publish authenticates via OIDC and attaches
       # provenance automatically. access=public comes from publishConfig.

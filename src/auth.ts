@@ -23,6 +23,17 @@ export function clearToken(): void {
   }
 }
 
+// Turn the toolbar off on this browser: drop both the activation flag and the token, so
+// the next load renders nothing. Same effect as ?alkahest=off, reachable from the panel.
+export function deactivate(): void {
+  try {
+    localStorage.removeItem(ACTIVE_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+  clearToken();
+}
+
 // The toolbar ships to every visitor but renders for almost none: only when a token is
 // already stored (a team member who signed in before) or the visitor explicitly turns it
 // on with ?alkahest=on (persisted; ?alkahest=off clears).

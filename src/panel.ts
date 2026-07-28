@@ -2,7 +2,7 @@
 // desktop, a bottom sheet on small screens. Vanilla DOM, no framework, `akt-` class
 // namespace, colors keyed to prefers-color-scheme so it sits quietly on any host page.
 import { ApiError, createIssue, currentRoute, listIssueMaps, type IssueMapOption } from "./api";
-import { clearToken, getToken, pickUpHandoffCode, signInUrl } from "./auth";
+import { clearToken, deactivate, getToken, pickUpHandoffCode, signInUrl } from "./auth";
 import type { ResolvedConfig } from "./config";
 
 const CSS = `
@@ -23,8 +23,15 @@ const CSS = `
 .akt-muted{color:#71717a;margin:0}
 .akt-err{color:#dc2626;margin:0}
 .akt-route{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#71717a;background:rgba(113,113,122,.1);border-radius:6px;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.akt-foot{display:flex;justify-content:flex-end;padding:8px 14px;border-top:1px solid #e4e4e7}
+.akt-link{border:none;background:none;padding:0;font:inherit;font-size:12px;color:#71717a;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.akt-link:hover{color:#dc2626}
+.akt-row{display:flex;gap:8px}
+.akt-row button{flex:1}
+.akt-ghost{border:1px solid #d4d4d8;border-radius:8px;padding:9px 12px;font:inherit;font-weight:600;cursor:pointer;background:transparent;color:inherit}
+.akt-danger{background:#dc2626}
 @media (max-width:480px){.akt-panel{left:0;right:0;bottom:0;width:auto;max-width:none;border-radius:16px 16px 0 0}}
-@media (prefers-color-scheme:dark){.akt-panel{background:#18181b;color:#fafafa;border-color:#27272a}.akt-head{border-color:#27272a}.akt-body input,.akt-body textarea,.akt-body select{border-color:#3f3f46}}
+@media (prefers-color-scheme:dark){.akt-panel{background:#18181b;color:#fafafa;border-color:#27272a}.akt-head,.akt-foot{border-color:#27272a}.akt-body input,.akt-body textarea,.akt-body select,.akt-ghost{border-color:#3f3f46}}
 `;
 
 // Where the button rests: snapped to the left or right edge, at `bottom` px from the
@@ -36,15 +43,17 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 
 export class Toolbar {
   private root: ShadowRoot;
+  private host: HTMLDivElement;
   private panel: HTMLDivElement | null = null;
   private maps: IssueMapOption[] | null = null;
   private btn: HTMLButtonElement;
   private pos: ButtonPos = { side: "right", bottom: 16 };
   private suppressClick = false;
+  private onResize = () => this.applyPos();
 
   constructor(private cfg: ResolvedConfig) {
     // Shadow DOM keeps host-page CSS out of the toolbar and vice versa.
-    const host = document.createElement("div");
+    const host = (this.host = document.createElement("div"));
     host.setAttribute("data-alkahest-toolbar", "");
     this.root = host.attachShadow({ mode: "open" });
     const style = document.createElement("style");
@@ -67,7 +76,7 @@ export class Toolbar {
       if (saved && (saved.side === "left" || saved.side === "right") && typeof saved.bottom === "number") this.pos = saved;
     } catch { /* default resting spot */ }
     this.applyPos();
-    window.addEventListener("resize", () => this.applyPos());
+    window.addEventListener("resize", this.onResize);
     this.wireDrag();
   }
 
@@ -148,13 +157,40 @@ export class Toolbar {
     this.panel = null;
   }
 
-  private frame(bodyHtml: string): HTMLDivElement {
+  // `off: true` adds the quiet footer escape hatch — without it the only way out is the
+  // ?alkahest=off URL, which nobody but the person who typed ?alkahest=on knows about.
+  private frame(bodyHtml: string, off = false): HTMLDivElement {
     const p = this.panel!;
     p.innerHTML = `
       <div class="akt-head"><span>File an issue</span><button class="akt-x" aria-label="Close">✕</button></div>
-      <div class="akt-body">${bodyHtml}</div>`;
+      <div class="akt-body">${bodyHtml}</div>
+      ${off ? `<div class="akt-foot"><button class="akt-link">Turn off toolbar</button></div>` : ""}`;
     p.querySelector(".akt-x")!.addEventListener("click", () => this.close());
+    p.querySelector(".akt-link")?.addEventListener("click", () => this.confirmOff());
     return p.querySelector(".akt-body") as HTMLDivElement;
+  }
+
+  // Two-step: turning it off also signs this browser out, and re-enabling needs a URL
+  // the visitor may not have handy — so say both before doing it.
+  private confirmOff() {
+    const body = this.frame(`
+      <p class="akt-muted">Hide the toolbar on this browser and sign out of it. To bring it back, open this site with <b>?alkahest=on</b>.</p>
+      <div class="akt-row">
+        <button class="akt-ghost">Cancel</button>
+        <button class="akt-submit akt-danger">Turn off</button>
+      </div>`);
+    body.querySelector(".akt-ghost")!.addEventListener("click", () => this.render());
+    body.querySelector(".akt-submit")!.addEventListener("click", () => {
+      deactivate();
+      this.destroy();
+    });
+  }
+
+  // Full teardown: the toolbar disappears without a reload.
+  private destroy() {
+    this.close();
+    window.removeEventListener("resize", this.onResize);
+    this.host.remove();
   }
 
   private async render() {
@@ -170,7 +206,7 @@ export class Toolbar {
     if (!token) {
       const body = this.frame(`
         <p class="akt-muted">Sign in with your Alkahest account to file issues for <b>${esc(this.cfg.project)}</b> right from this page.</p>
-        <button class="akt-submit">Sign in with Alkahest</button>`);
+        <button class="akt-submit">Sign in with Alkahest</button>`, true);
       body.querySelector("button")!.addEventListener("click", () => {
         location.href = signInUrl(this.cfg);
       });
@@ -195,7 +231,7 @@ export class Toolbar {
       <label>Title<input maxlength="200" placeholder="What's wrong?"></label>
       <label>Details<textarea placeholder="What did you expect? What happened?"></textarea></label>
       <p class="akt-err" hidden></p>
-      <button class="akt-submit">File issue</button>`);
+      <button class="akt-submit">File issue</button>`, true);
 
     const err = body.querySelector(".akt-err") as HTMLParagraphElement;
     const submit = body.querySelector(".akt-submit") as HTMLButtonElement;
@@ -214,7 +250,7 @@ export class Toolbar {
           details: (body.querySelector("textarea") as HTMLTextAreaElement).value.trim(),
           mapSlug: this.cfg.issueMap ?? (body.querySelector("select") as HTMLSelectElement | null)?.value ?? null,
         });
-        this.frame(`<p class="akt-muted">Issue filed. Thanks! It's now in <b>${esc(this.cfg.project)}</b>'s pool, anchored to <b>${esc(currentRoute())}</b>.</p>`);
+        this.frame(`<p class="akt-muted">Issue filed. Thanks! It's now in <b>${esc(this.cfg.project)}</b>'s pool, anchored to <b>${esc(currentRoute())}</b>.</p>`, true);
       } catch (e) {
         this.fail(e, body, submit);
       }

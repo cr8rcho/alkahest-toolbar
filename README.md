@@ -91,6 +91,10 @@ The snippet is inert by default, so it's safe to ship on production:
   token — that's how a team member reaches the sign-in flow the first time. The flag
   persists in `localStorage`, so it's needed only once per browser.
 - `?alkahest=off` hides the button again **and clears the stored token**.
+- **Turn off toolbar** in the panel's footer does the same thing from the UI (confirm step,
+  then the toolbar unmounts on the spot) — the URL flag is fine for whoever typed
+  `?alkahest=on`, but a reporter who was walked through the sign-in flow has no way back out
+  without it.
 
 > **SPA note:** the toolbar reads the activation flag and the returning consent code both
 > at load and when the panel opens, so client-router navigations that rewrite the URL

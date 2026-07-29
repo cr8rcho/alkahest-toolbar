@@ -91,10 +91,14 @@ The snippet is inert by default, so it's safe to ship on production:
   token — that's how a team member reaches the sign-in flow the first time. The flag
   persists in `localStorage`, so it's needed only once per browser.
 - `?alkahest=off` hides the button again **and clears the stored token**.
+- **Drag the button onto the ✕ target** at the bottom center of the screen — the target
+  rises as soon as a drag starts, arms (red, larger) when the button comes within ~72 px of
+  it, and dropping there opens the turn-off confirmation.
 - **Turn off toolbar** in the panel's footer does the same thing from the UI (confirm step,
   then the toolbar unmounts on the spot) — the URL flag is fine for whoever typed
   `?alkahest=on`, but a reporter who was walked through the sign-in flow has no way back out
-  without it.
+  without it. The link stays alongside the drag gesture because a drag isn't reachable from
+  the keyboard and is easy to miss on desktop.
 
 > **SPA note:** the toolbar reads the activation flag and the returning consent code both
 > at load and when the panel opens, so client-router navigations that rewrite the URL
@@ -108,6 +112,10 @@ The snippet is inert by default, so it's safe to ship on production:
   to the nearer left/right screen edge and remembers the spot per origin, so it can stay
   clear of your app's own floating buttons. A tap (< 6 px movement) opens the panel; a
   drag never does.
+- **Drag to dismiss:** while dragging, a ✕ target appears at the bottom center. Dropping
+  the button on it asks to turn the toolbar off (it doesn't turn off immediately — that
+  also signs this browser out, so it goes through the same confirmation as the footer
+  link). Cancelling puts the button back where it was; the drop position is never saved.
 - The panel opens next to the button's resting spot on desktop, and as a full-width
   bottom sheet on small screens (≤ 480 px).
 

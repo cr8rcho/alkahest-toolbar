@@ -6,9 +6,18 @@ import { clearToken, deactivate, getToken, pickUpHandoffCode, signInUrl } from "
 import type { ResolvedConfig } from "./config";
 
 const CSS = `
-.akt-btn{position:fixed;right:16px;bottom:16px;z-index:2147483000;width:48px;height:48px;border-radius:50%;border:none;cursor:grab;background:#6366f1;color:#fff;font-size:20px;line-height:1;box-shadow:0 4px 12px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none}
+.akt-btn{position:fixed;right:16px;bottom:16px;z-index:2147483000;width:48px;height:48px;border-radius:50%;border:none;cursor:grab;background:#6366f1;color:#fff;font-size:20px;line-height:1;box-shadow:0 4px 12px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;transition:transform .16s ease,background .16s ease,opacity .16s ease}
 .akt-btn:hover{filter:brightness(1.1)}
-.akt-btn.akt-dragging{cursor:grabbing;transition:none}
+.akt-btn.akt-dragging{cursor:grabbing;transform:scale(1.06)}
+/* Armed: the button fades under the target (which sits above it) so the ✕ stays readable. */
+.akt-btn.akt-armed{background:#dc2626;transform:scale(.7);opacity:.35;box-shadow:none}
+.akt-btn.akt-gone{opacity:0;transform:scale(.6);pointer-events:none;transition:opacity .16s ease,transform .16s ease}
+.akt-dismiss{position:fixed;left:50%;bottom:calc(26px + env(safe-area-inset-bottom,0px));z-index:2147483002;width:60px;height:60px;margin-left:-30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1px solid rgba(24,24,27,.22);background:rgba(255,255,255,.7);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:#52525b;opacity:0;transform:translateY(14px) scale(.9);pointer-events:none;transition:opacity .18s ease,transform .18s cubic-bezier(.2,.8,.2,1),background .16s ease,border-color .16s ease,color .16s ease}
+.akt-dismiss.akt-show{opacity:1;transform:translateY(0) scale(1)}
+.akt-dismiss.akt-armed{transform:translateY(0) scale(1.18);background:rgba(220,38,38,.12);border-color:#dc2626;color:#dc2626}
+.akt-dismiss svg{width:22px;height:22px}
+.akt-dismiss-label{position:absolute;left:50%;top:-24px;transform:translateX(-50%);white-space:nowrap;font:600 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.04em;color:#71717a}
+.akt-dismiss.akt-armed .akt-dismiss-label{color:#dc2626}
 .akt-panel{position:fixed;right:16px;bottom:76px;z-index:2147483001;width:340px;max-width:calc(100vw - 32px);border-radius:12px;background:#fff;color:#18181b;border:1px solid #e4e4e7;box-shadow:0 12px 32px rgba(0,0,0,.25);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;flex-direction:column;overflow:hidden}
 .akt-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e4e4e7;font-weight:600}
 .akt-x{border:none;background:none;cursor:pointer;font-size:16px;color:inherit;opacity:.6;padding:2px 6px}
@@ -31,7 +40,9 @@ const CSS = `
 .akt-ghost{border:1px solid #d4d4d8;border-radius:8px;padding:9px 12px;font:inherit;font-weight:600;cursor:pointer;background:transparent;color:inherit}
 .akt-danger{background:#dc2626}
 @media (max-width:480px){.akt-panel{left:0;right:0;bottom:0;width:auto;max-width:none;border-radius:16px 16px 0 0}}
-@media (prefers-color-scheme:dark){.akt-panel{background:#18181b;color:#fafafa;border-color:#27272a}.akt-head,.akt-foot{border-color:#27272a}.akt-body input,.akt-body textarea,.akt-body select,.akt-ghost{border-color:#3f3f46}}
+@media (prefers-color-scheme:dark){.akt-panel{background:#18181b;color:#fafafa;border-color:#27272a}.akt-head,.akt-foot{border-color:#27272a}.akt-body input,.akt-body textarea,.akt-body select,.akt-ghost{border-color:#3f3f46}.akt-dismiss{background:rgba(24,24,27,.7);border-color:rgba(250,250,250,.24);color:#a1a1aa}.akt-dismiss.akt-armed{background:rgba(248,113,113,.18);border-color:#f87171;color:#f87171}.akt-dismiss-label{color:#a1a1aa}.akt-dismiss.akt-armed .akt-dismiss-label{color:#f87171}}
+/* Keep the arm signal (color) under reduced motion — it's the only other cue there is. */
+@media (prefers-reduced-motion:reduce){.akt-btn,.akt-dismiss{transition-property:background,border-color,color,opacity}}
 `;
 
 // Where the button rests: snapped to the left or right edge, at `bottom` px from the
@@ -41,14 +52,20 @@ const POS_KEY = "alkahest.toolbar.pos";
 type ButtonPos = { side: "left" | "right"; bottom: number };
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
+// Drag-to-dismiss (the Vercel-toolbar gesture): while dragging, a target circle rises at
+// the bottom center; the drag arms when the button's center comes within ARM_RADIUS of it.
+const ARM_RADIUS = 72;
+
 export class Toolbar {
   private root: ShadowRoot;
   private host: HTMLDivElement;
   private panel: HTMLDivElement | null = null;
   private maps: IssueMapOption[] | null = null;
   private btn: HTMLButtonElement;
+  private dismiss: HTMLDivElement;
   private pos: ButtonPos = { side: "right", bottom: 16 };
   private suppressClick = false;
+  private pendingOff = false; // the confirm sheet was opened by a drop, so the button is hidden
   private onResize = () => this.applyPos();
 
   constructor(private cfg: ResolvedConfig) {
@@ -61,7 +78,7 @@ export class Toolbar {
     this.root.appendChild(style);
     const btn = (this.btn = document.createElement("button"));
     btn.className = "akt-btn";
-    btn.title = "File an Alkahest issue (drag to move)";
+    btn.title = "File an Alkahest issue (drag to move, drop at the bottom to turn off)";
     btn.textContent = "◈";
     btn.addEventListener("click", () => {
       // A drag ends in a click on the same element — swallow it so releasing doesn't open.
@@ -69,6 +86,15 @@ export class Toolbar {
       this.toggle();
     });
     this.root.appendChild(btn);
+
+    const dismiss = (this.dismiss = document.createElement("div"));
+    dismiss.className = "akt-dismiss";
+    dismiss.setAttribute("aria-hidden", "true");
+    dismiss.innerHTML =
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">` +
+      `<path d="M6 6l12 12M18 6L6 18"/></svg><span class="akt-dismiss-label">Drop to turn off</span>`;
+    this.root.appendChild(dismiss);
+
     document.body.appendChild(host);
 
     try {
@@ -93,32 +119,60 @@ export class Toolbar {
 
   // Drag to move (chat-head style): free while dragging, snaps to the nearer left/right
   // edge on release. A <6px movement counts as a tap (the click handler runs toggle()).
+  // Dropping onto the bottom-center target instead asks to turn the toolbar off.
   private wireDrag() {
     const btn = this.btn;
-    let sx = 0, sy = 0, startLeft = 0, startTop = 0, dragging = false;
+    let sx = 0, sy = 0, startLeft = 0, startTop = 0, dragging = false, armed = false;
     btn.addEventListener("pointerdown", (e) => {
+      if (this.pendingOff) return; // the confirm sheet owns the button right now
       sx = e.clientX; sy = e.clientY;
       const r = btn.getBoundingClientRect();
       startLeft = r.left; startTop = r.top;
-      dragging = false;
+      dragging = false; armed = false;
       btn.setPointerCapture(e.pointerId);
     });
     btn.addEventListener("pointermove", (e) => {
       if (!btn.hasPointerCapture(e.pointerId)) return;
       const dx = e.clientX - sx, dy = e.clientY - sy;
       if (!dragging && Math.hypot(dx, dy) < 6) return;
-      dragging = true;
-      btn.classList.add("akt-dragging");
+      if (!dragging) {
+        dragging = true;
+        btn.classList.add("akt-dragging");
+        this.dismiss.classList.add("akt-show");
+      }
       const s = btn.style;
       s.left = clamp(startLeft + dx, 8, window.innerWidth - 56) + "px";
       s.top = clamp(startTop + dy, 8, window.innerHeight - 56) + "px";
       s.right = "auto"; s.bottom = "auto";
+
+      // Arm on proximity only — no magnetic snap, so the button never drifts off the finger.
+      const b = btn.getBoundingClientRect(), t = this.dismiss.getBoundingClientRect();
+      const near = Math.hypot(
+        b.left + b.width / 2 - (t.left + t.width / 2),
+        b.top + b.height / 2 - (t.top + t.height / 2),
+      ) < ARM_RADIUS;
+      if (near === armed) return;
+      armed = near;
+      btn.classList.toggle("akt-armed", armed);
+      this.dismiss.classList.toggle("akt-armed", armed);
+      this.dismiss.querySelector(".akt-dismiss-label")!.textContent =
+        armed ? "Release to turn off" : "Drop to turn off";
+      if (armed) navigator.vibrate?.(8);
     });
-    btn.addEventListener("pointerup", () => {
+    const end = () => {
       if (!dragging) return;
       dragging = false;
       this.suppressClick = true;
-      btn.classList.remove("akt-dragging");
+      btn.classList.remove("akt-dragging", "akt-armed");
+      this.dismiss.classList.remove("akt-show", "akt-armed");
+      this.dismiss.querySelector(".akt-dismiss-label")!.textContent = "Drop to turn off";
+      if (armed) {
+        armed = false;
+        // Don't record where it was dropped — the resting spot only changes on a real move.
+        this.applyPos();
+        this.askOff();
+        return;
+      }
       const r = btn.getBoundingClientRect();
       this.pos = {
         side: r.left + r.width / 2 < window.innerWidth / 2 ? "left" : "right",
@@ -126,7 +180,23 @@ export class Toolbar {
       };
       try { localStorage.setItem(POS_KEY, JSON.stringify(this.pos)); } catch { /* ignore */ }
       this.applyPos();
-    });
+    };
+    btn.addEventListener("pointerup", end);
+    btn.addEventListener("pointercancel", end);
+  }
+
+  // Dropped on the target: hide the button (it reads as "gone" while the sheet decides its
+  // fate) and open the same confirmation the panel's footer link uses.
+  private askOff() {
+    this.pendingOff = true;
+    this.btn.classList.add("akt-gone");
+    if (!this.panel) {
+      this.panel = document.createElement("div");
+      this.panel.className = "akt-panel";
+      this.root.appendChild(this.panel);
+      this.placePanel();
+    }
+    this.confirmOff();
   }
 
   // Desktop: the panel opens adjacent to the button (same edge, just above it). Mobile
@@ -155,14 +225,22 @@ export class Toolbar {
   private close() {
     this.panel?.remove();
     this.panel = null;
+    this.keepOn();
+  }
+
+  // Whatever ends the confirmation short of turning off brings the button back.
+  private keepOn() {
+    if (!this.pendingOff) return;
+    this.pendingOff = false;
+    this.btn.classList.remove("akt-gone");
   }
 
   // `off: true` adds the quiet footer escape hatch — without it the only way out is the
   // ?alkahest=off URL, which nobody but the person who typed ?alkahest=on knows about.
-  private frame(bodyHtml: string, off = false): HTMLDivElement {
+  private frame(bodyHtml: string, off = false, title = "File an issue"): HTMLDivElement {
     const p = this.panel!;
     p.innerHTML = `
-      <div class="akt-head"><span>File an issue</span><button class="akt-x" aria-label="Close">✕</button></div>
+      <div class="akt-head"><span>${esc(title)}</span><button class="akt-x" aria-label="Close">✕</button></div>
       <div class="akt-body">${bodyHtml}</div>
       ${off ? `<div class="akt-foot"><button class="akt-link">Turn off toolbar</button></div>` : ""}`;
     p.querySelector(".akt-x")!.addEventListener("click", () => this.close());
@@ -178,8 +256,13 @@ export class Toolbar {
       <div class="akt-row">
         <button class="akt-ghost">Cancel</button>
         <button class="akt-submit akt-danger">Turn off</button>
-      </div>`);
-    body.querySelector(".akt-ghost")!.addEventListener("click", () => this.render());
+      </div>`, false, "Turn off toolbar");
+    // Cancelling a drop puts things back the way they were (button visible, no panel);
+    // cancelling the footer link just returns to the form.
+    body.querySelector(".akt-ghost")!.addEventListener("click", () => {
+      if (this.pendingOff) return this.close();
+      this.render();
+    });
     body.querySelector(".akt-submit")!.addEventListener("click", () => {
       deactivate();
       this.destroy();

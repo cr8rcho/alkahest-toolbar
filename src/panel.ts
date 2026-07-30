@@ -20,7 +20,9 @@ const CSS = `
 .akt-dismiss.akt-armed .akt-dismiss-label{color:#dc2626}
 .akt-panel{position:fixed;right:16px;bottom:76px;z-index:2147483001;width:340px;max-width:calc(100vw - 32px);border-radius:12px;background:#fff;color:#18181b;border:1px solid #e4e4e7;box-shadow:0 12px 32px rgba(0,0,0,.25);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;flex-direction:column;overflow:hidden}
 .akt-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e4e4e7;font-weight:600}
-.akt-x{border:none;background:none;cursor:pointer;font-size:16px;color:inherit;opacity:.6;padding:2px 6px}
+/* 32px box around a 16px glyph, pulled back by the negative margin so the head keeps its
+   height — the ✕ used to be a 24x22 target, which is a miss waiting to happen on a phone. */
+.akt-x{border:none;background:none;cursor:pointer;font-size:16px;color:inherit;opacity:.6;padding:0;width:32px;height:32px;margin:-6px -8px -6px 0;display:flex;align-items:center;justify-content:center;flex:none}
 .akt-x:hover{opacity:1}
 .akt-body{padding:14px;display:flex;flex-direction:column;gap:10px}
 .akt-body label{display:flex;flex-direction:column;gap:4px;font-weight:500}
@@ -33,13 +35,24 @@ const CSS = `
 .akt-err{color:#dc2626;margin:0}
 .akt-route{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#71717a;background:rgba(113,113,122,.1);border-radius:6px;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .akt-foot{display:flex;justify-content:flex-end;padding:8px 14px;border-top:1px solid #e4e4e7}
-.akt-link{border:none;background:none;padding:0;font:inherit;font-size:12px;color:#71717a;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.akt-link{border:none;background:none;padding:6px 0;font:inherit;font-size:12px;color:#71717a;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .akt-link:hover{color:#dc2626}
 .akt-row{display:flex;gap:8px}
 .akt-row button{flex:1}
 .akt-ghost{border:1px solid #d4d4d8;border-radius:8px;padding:9px 12px;font:inherit;font-weight:600;cursor:pointer;background:transparent;color:inherit}
 .akt-danger{background:#dc2626}
-@media (max-width:480px){.akt-panel{left:0;right:0;bottom:0;width:auto;max-width:none;border-radius:16px 16px 0 0}}
+/* Phone: a bottom sheet, and every control sized for a thumb. 16px on the fields is not a
+   taste call — iOS Safari zooms the whole page when a focused field is under 16px, which
+   yanks the sheet around mid-tap and is why filling this form felt like a fight. The
+   padding bump takes the fields and buttons from ~35px to ~44px. */
+@media (max-width:480px){
+.akt-panel{left:0;right:0;bottom:0;width:auto;max-width:none;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}
+.akt-body input,.akt-body textarea,.akt-body select{font-size:16px;padding:10px 11px}
+.akt-body textarea{min-height:88px}
+.akt-submit,.akt-ghost{padding:12px 14px;font-size:15px}
+.akt-x{width:40px;height:40px;margin:-10px -10px -10px 0}
+.akt-link{padding:10px 0}
+}
 @media (prefers-color-scheme:dark){.akt-panel{background:#18181b;color:#fafafa;border-color:#27272a}.akt-head,.akt-foot{border-color:#27272a}.akt-body input,.akt-body textarea,.akt-body select,.akt-ghost{border-color:#3f3f46}.akt-dismiss{background:rgba(24,24,27,.7);border-color:rgba(250,250,250,.24);color:#a1a1aa}.akt-dismiss.akt-armed{background:rgba(248,113,113,.18);border-color:#f87171;color:#f87171}.akt-dismiss-label{color:#a1a1aa}.akt-dismiss.akt-armed .akt-dismiss-label{color:#f87171}}
 /* Keep the arm signal (color) under reduced motion — it's the only other cue there is. */
 @media (prefers-reduced-motion:reduce){.akt-btn,.akt-dismiss{transition-property:background,border-color,color,opacity}}
@@ -67,6 +80,8 @@ export class Toolbar {
   private suppressClick = false;
   private pendingOff = false; // the confirm sheet was opened by a drop, so the button is hidden
   private onResize = () => this.applyPos();
+  // The keyboard opening/closing is a visual-viewport event, not a window resize.
+  private onViewport = () => { if (this.panel) this.placePanel(); };
 
   constructor(private cfg: ResolvedConfig) {
     // Shadow DOM keeps host-page CSS out of the toolbar and vice versa.
@@ -103,6 +118,8 @@ export class Toolbar {
     } catch { /* default resting spot */ }
     this.applyPos();
     window.addEventListener("resize", this.onResize);
+    window.visualViewport?.addEventListener("resize", this.onViewport);
+    window.visualViewport?.addEventListener("scroll", this.onViewport);
     this.wireDrag();
   }
 
@@ -125,6 +142,11 @@ export class Toolbar {
     let sx = 0, sy = 0, startLeft = 0, startTop = 0, dragging = false, armed = false;
     btn.addEventListener("pointerdown", (e) => {
       if (this.pendingOff) return; // the confirm sheet owns the button right now
+      // Clear the drag's click-swallow flag at the START of every gesture. A mouse drag ends
+      // in a click, which consumed the flag; a TOUCH drag ends without one, so the flag set
+      // by the previous drag was still up and ate the next tap — the button needed two taps
+      // to open the panel after any drag on a phone.
+      this.suppressClick = false;
       sx = e.clientX; sy = e.clientY;
       const r = btn.getBoundingClientRect();
       startLeft = r.left; startTop = r.top;
@@ -199,13 +221,25 @@ export class Toolbar {
     this.confirmOff();
   }
 
+  // The software keyboard's height, as the visual viewport reports it. iOS does NOT move
+  // `position:fixed` elements when the keyboard opens — it only shrinks the visual viewport —
+  // so a bottom sheet keeps sitting UNDER the keyboard exactly while its form is being filled
+  // (Details and File issue were the parts that went missing). Same visual-viewport trick the
+  // Alkahest web app uses to size its dialogs.
+  private keyboardInset(): number {
+    const vv = window.visualViewport;
+    if (!vv) return 0;
+    return Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+  }
+
   // Desktop: the panel opens adjacent to the button (same edge, just above it). Mobile
-  // (≤480px) keeps the full-width bottom sheet — the CSS media query owns it, so clear
-  // any inline position there.
+  // (≤480px) keeps the full-width bottom sheet — the CSS media query owns its box, so only
+  // the keyboard lift is set inline there.
   private placePanel() {
     const p = this.panel!.style;
     if (!window.matchMedia("(min-width: 481px)").matches) {
-      p.left = p.right = p.bottom = "";
+      p.left = p.right = "";
+      p.bottom = this.keyboardInset() + "px";
       return;
     }
     p.bottom = clamp(this.pos.bottom + 60, 16, window.innerHeight - 220) + "px";
@@ -273,6 +307,8 @@ export class Toolbar {
   private destroy() {
     this.close();
     window.removeEventListener("resize", this.onResize);
+    window.visualViewport?.removeEventListener("resize", this.onViewport);
+    window.visualViewport?.removeEventListener("scroll", this.onViewport);
     this.host.remove();
   }
 

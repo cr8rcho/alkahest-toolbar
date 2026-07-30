@@ -77,8 +77,10 @@ const CSS = `
 .akt-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-top:1px solid var(--c-line);flex:none}
 .akt-barleft{display:flex;align-items:center;gap:10px;min-width:0}
 .akt-chip{appearance:none;-webkit-appearance:none;border:1px solid var(--c-line);border-radius:999px;padding:5px 11px;font:inherit;font-size:12px;color:var(--c-muted);background:transparent;max-width:150px;outline:none}
-.akt-hint{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--c-muted)}
-.akt-send{box-sizing:border-box;border:0;border-radius:8px;height:32px;padding:0 14px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;background:var(--c-primary);color:var(--c-primary-ink);display:flex;align-items:center;justify-content:center;flex:none}
+/* The shortcut belongs to the button, not to the bar: alone on the left it read as a stray
+   glyph. Inside, dimmed and trailing the label, it is unmistakably "this button, that key". */
+.akt-hint{font-family:ui-monospace,Menlo,monospace;font-size:11px;opacity:.55;margin-left:2px}
+.akt-send{box-sizing:border-box;border:0;border-radius:8px;height:32px;padding:0 12px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;background:var(--c-primary);color:var(--c-primary-ink);display:flex;align-items:center;justify-content:center;gap:7px;flex:none}
 .akt-send:disabled{opacity:.35;cursor:default}
 .akt-send .akt-send-icon{display:none;font-size:15px;line-height:1}
 /* Phone: a bottom sheet, 16px fields, thumb-sized buttons.
@@ -101,6 +103,7 @@ const CSS = `
 .akt-panel[data-compose] .akt-body .akt-desc{font-size:16px;min-height:0}
 .akt-panel[data-compose] .akt-bar{padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px))}
 .akt-hint{display:none}                                   /* no modifier keys on a phone */
+.akt-send{gap:0}
 .akt-send{width:36px;height:36px;padding:0;border-radius:10px}
 .akt-send .akt-send-icon{display:block}
 .akt-send .akt-send-text{display:none}
@@ -516,9 +519,8 @@ export class Toolbar {
       `<div class="akt-bar">
         <span class="akt-barleft">
           ${pickable ? `<select class="akt-chip" aria-label="Issue map">${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select>` : ""}
-          <span class="akt-hint">⌘↵</span>
         </span>
-        <button class="akt-send" aria-label="File issue" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span></button>
+        <button class="akt-send" aria-label="File issue" title="File issue (⌘↵)" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span><span class="akt-hint">⌘↵</span></button>
       </div>`);
 
     const panel = this.panel!;

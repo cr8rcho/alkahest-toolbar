@@ -7,47 +7,69 @@ import { clearToken, deactivate, getToken, pickUpHandoffCode, signInUrl } from "
 import type { ResolvedConfig } from "./config";
 
 const CSS = `
+/* The app's design tokens, copied by value (a widget can't import Tailwind/shadcn). Names mirror
+   app/globals.css so a token change there is a one-line change here. Light is the default; the
+   dark block below only redefines values. FONT: Inter first so a host that already loads it (our
+   own app does) gets it — a widget must never download a webfont onto someone else's page. */
+:host{--c-card:#fff;--c-ink:#08090a;--c-muted:#62666d;--c-input:#e8e9eb;--c-line:#e8e9eb;
+      --c-primary:#08090a;--c-primary-ink:#fafafa;--c-danger:#eb5757;--c-brand:#6366f1;
+      --c-font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 .akt-btn{position:fixed;right:16px;bottom:16px;z-index:2147483000;width:48px;height:48px;border-radius:50%;border:none;cursor:grab;background:#6366f1;color:#fff;font-size:20px;line-height:1;box-shadow:0 4px 12px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;transition:transform .16s ease,background .16s ease,opacity .16s ease}
 .akt-btn:hover{filter:brightness(1.1)}
 .akt-btn.akt-dragging{cursor:grabbing;transform:scale(1.06)}
 /* Armed: the button fades under the target (which sits above it) so the ✕ stays readable. */
-.akt-btn.akt-armed{background:#dc2626;transform:scale(.7);opacity:.35;box-shadow:none}
+.akt-btn.akt-armed{background:var(--c-danger);transform:scale(.7);opacity:.35;box-shadow:none}
 .akt-btn.akt-gone{opacity:0;transform:scale(.6);pointer-events:none;transition:opacity .16s ease,transform .16s ease}
 .akt-dismiss{position:fixed;left:50%;bottom:calc(26px + env(safe-area-inset-bottom,0px));z-index:2147483002;width:60px;height:60px;margin-left:-30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1px solid rgba(24,24,27,.22);background:rgba(255,255,255,.7);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:#52525b;opacity:0;transform:translateY(14px) scale(.9);pointer-events:none;transition:opacity .18s ease,transform .18s cubic-bezier(.2,.8,.2,1),background .16s ease,border-color .16s ease,color .16s ease}
 .akt-dismiss.akt-show{opacity:1;transform:translateY(0) scale(1)}
-.akt-dismiss.akt-armed{transform:translateY(0) scale(1.18);background:rgba(220,38,38,.12);border-color:#dc2626;color:#dc2626}
+.akt-dismiss.akt-armed{transform:translateY(0) scale(1.18);background:rgba(235,87,87,.12);border-color:var(--c-danger);color:var(--c-danger)}
 .akt-dismiss svg{width:22px;height:22px}
-.akt-dismiss-label{position:absolute;left:50%;top:-24px;transform:translateX(-50%);white-space:nowrap;font:600 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.04em;color:#71717a}
-.akt-dismiss.akt-armed .akt-dismiss-label{color:#dc2626}
-.akt-panel{position:fixed;right:16px;bottom:76px;z-index:2147483001;width:340px;max-width:calc(100vw - 32px);border-radius:12px;background:#fff;color:#18181b;border:1px solid #e4e4e7;box-shadow:0 12px 32px rgba(0,0,0,.25);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;flex-direction:column;overflow:hidden}
-.akt-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e4e4e7;font-weight:600}
+.akt-dismiss-label{position:absolute;left:50%;top:-24px;transform:translateX(-50%);white-space:nowrap;font:600 11px/1 var(--c-font);letter-spacing:.04em;color:var(--c-muted)}
+.akt-dismiss.akt-armed .akt-dismiss-label{color:var(--c-danger)}
+.akt-panel{position:fixed;right:16px;bottom:76px;z-index:2147483001;width:340px;max-width:calc(100vw - 32px);border-radius:12px;background:var(--c-card);color:var(--c-ink);border:1px solid var(--c-line);box-shadow:0 12px 32px rgba(0,0,0,.25);font:14px/1.5 var(--c-font);display:flex;flex-direction:column;overflow:hidden}
+/* 14px/700 = the viewer issue panel's own panel heading (viewer-issues.tsx CreateForm), not the
+   dialog's 16px/500 — this is a floating panel, so it follows the panel idiom throughout. */
+.akt-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--c-line);font-weight:700}
 /* 32px box around a 16px glyph, pulled back by the negative margin so the head keeps its
    height — the ✕ used to be a 24x22 target, which is a miss waiting to happen on a phone. */
 .akt-x{border:none;background:none;cursor:pointer;font-size:16px;color:inherit;opacity:.6;padding:0;width:32px;height:32px;margin:-6px -8px -6px 0;display:flex;align-items:center;justify-content:center;flex:none}
 .akt-x:hover{opacity:1}
-.akt-body{padding:14px;display:flex;flex-direction:column;gap:10px}
-.akt-body label{display:flex;flex-direction:column;gap:4px;font-weight:500}
-.akt-body input,.akt-body textarea,.akt-body select{font:inherit;color:inherit;background:transparent;border:1px solid #d4d4d8;border-radius:8px;padding:7px 9px;outline:none}
-.akt-body input:focus,.akt-body textarea:focus,.akt-body select:focus{border-color:#6366f1}
-.akt-body textarea{resize:vertical;min-height:64px}
-.akt-submit{border:none;border-radius:8px;padding:9px 12px;font:inherit;font-weight:600;cursor:pointer;background:#6366f1;color:#fff}
+/* 16px between fields / 4px label-to-control = the panel's mt-4 + mb-1 ramp (issue-fields.tsx,
+   lifted from Atlassian form spacing there). */
+.akt-body{padding:14px;display:flex;flex-direction:column;gap:16px}
+.akt-body label{display:flex;flex-direction:column;gap:4px}
+/* SECTION_LABEL: 12px uppercase tracking-wide muted, weight inherited (400). The text lives in a
+   span, NOT on the <label> — the label wraps its control, so a font-size/text-transform/colour on
+   it would cascade straight into the input's own text. */
+.akt-lab{font-size:12px;text-transform:uppercase;letter-spacing:.025em;color:var(--c-muted)}
+/* shadcn Input/Textarea metrics: h-8 + px-3, min-h-14 + px-2.5 py-2. Explicit font-size (not
+   font:inherit) so the label span's 12px can never leak in. */
+.akt-body input,.akt-body textarea,.akt-body select{box-sizing:border-box;font-family:inherit;font-size:14px;text-transform:none;letter-spacing:normal;color:var(--c-ink);background:transparent;border:1px solid var(--c-input);border-radius:8px;outline:none}
+.akt-body input,.akt-body select{height:32px;padding:0 12px}
+.akt-body textarea{resize:vertical;min-height:56px;padding:8px 10px}
+/* focus-visible's signature in this system is border + a 3px ring at 50% brand (ring-3). */
+.akt-body input:focus,.akt-body textarea:focus,.akt-body select:focus{border-color:var(--c-brand);box-shadow:0 0 0 3px rgb(99 102 241 / .5)}
+/* Neutral, like every other primary button in the product: the indigo brand is an accent (rings,
+   status dots, and the bubble itself), never a button fill. */
+.akt-submit{box-sizing:border-box;border:none;border-radius:8px;padding:0 14px;height:32px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;background:var(--c-primary);color:var(--c-primary-ink)}
 .akt-submit:disabled{opacity:.5;cursor:default}
-.akt-muted{color:#71717a;margin:0}
-.akt-err{color:#dc2626;margin:0}
-.akt-route{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#71717a;background:rgba(113,113,122,.1);border-radius:6px;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.akt-muted{color:var(--c-muted);margin:0}
+.akt-err{color:var(--c-danger);margin:0}
+.akt-route{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--c-muted);background:color-mix(in srgb,var(--c-muted) 10%,transparent);border-radius:6px;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .akt-row{display:flex;gap:8px}
 .akt-row button{flex:1}
-.akt-ghost{border:1px solid #d4d4d8;border-radius:8px;padding:9px 12px;font:inherit;font-weight:600;cursor:pointer;background:transparent;color:inherit}
-.akt-danger{background:#dc2626}
+.akt-ghost{box-sizing:border-box;border:1px solid var(--c-input);border-radius:8px;padding:0 14px;height:32px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;background:transparent;color:inherit}
+.akt-danger{background:var(--c-danger)}
 /* Phone: a bottom sheet, and every control sized for a thumb. 16px on the fields is not a
    taste call — iOS Safari zooms the whole page when a focused field is under 16px, which
    yanks the sheet around mid-tap and is why filling this form felt like a fight. The
    padding bump takes the fields and buttons from ~35px to ~44px. */
 @media (max-width:480px){
 .akt-panel{left:0;right:0;bottom:0;width:auto;max-width:none;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}
-.akt-body input,.akt-body textarea,.akt-body select{font-size:16px;padding:10px 11px}
-.akt-body textarea{min-height:88px}
-.akt-submit,.akt-ghost{padding:12px 14px;font-size:15px}
+.akt-body input,.akt-body textarea,.akt-body select{font-size:16px}
+.akt-body input,.akt-body select{height:44px;padding:0 12px}
+.akt-body textarea{min-height:88px;padding:11px 12px}
+.akt-submit,.akt-ghost{height:46px;padding:0 16px;font-size:15px}
 .akt-x{width:40px;height:40px;margin:-10px -10px -10px 0}
 }
 /* Dark is keyed to a class on the shadow host, not prefers-color-scheme, because the OS is
@@ -55,10 +77,8 @@ const CSS = `
    OS is light (alkahest.app itself defaults to dark). JS resolves which one to use — see
    resolveTheme() — and the OS preference is only the last fallback. color-scheme on the host
    makes the native bits inside the shadow tree (select popup, caret, scrollbars) follow too. */
-:host(.akt-dark){color-scheme:dark}
-:host(.akt-dark) .akt-panel{background:#18181b;color:#fafafa;border-color:#27272a}
-:host(.akt-dark) .akt-head{border-color:#27272a}
-:host(.akt-dark) .akt-body input,:host(.akt-dark) .akt-body textarea,:host(.akt-dark) .akt-body select,:host(.akt-dark) .akt-ghost{border-color:#3f3f46}
+:host(.akt-dark){color-scheme:dark;--c-card:#161718;--c-ink:#f7f8f8;--c-muted:#8a8f98;--c-input:#26282c;
+                 --c-line:#23252a;--c-primary:#f7f8f8;--c-primary-ink:#08090a}
 :host(.akt-dark) .akt-dismiss{background:rgba(24,24,27,.7);border-color:rgba(250,250,250,.24);color:#a1a1aa}
 :host(.akt-dark) .akt-dismiss.akt-armed{background:rgba(248,113,113,.18);border-color:#f87171;color:#f87171}
 :host(.akt-dark) .akt-dismiss-label{color:#a1a1aa}
@@ -399,9 +419,9 @@ export class Toolbar {
 
     const body = this.frame(`
       <div class="akt-route" title="Recorded as the issue's route target">${esc(currentRoute())}</div>
-      ${pickable ? `<label>Issue map<select>${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select></label>` : ""}
-      <label>Title<input maxlength="200" placeholder="What's wrong?"></label>
-      <label>Details<textarea placeholder="What did you expect? What happened?"></textarea></label>
+      ${pickable ? `<label><span class="akt-lab">Issue map</span><select>${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select></label>` : ""}
+      <label><span class="akt-lab">Title</span><input maxlength="200" placeholder="What's wrong?"></label>
+      <label><span class="akt-lab">Description</span><textarea placeholder="What did you expect? What happened?"></textarea></label>
       <p class="akt-err" hidden></p>
       <button class="akt-submit">File issue</button>`);
 

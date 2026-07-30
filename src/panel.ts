@@ -298,27 +298,46 @@ export class Toolbar {
     this.confirmOff();
   }
 
-  // The software keyboard's height, as the visual viewport reports it. iOS does NOT move
-  // `position:fixed` elements when the keyboard opens — it only shrinks the visual viewport —
-  // so a bottom sheet keeps sitting UNDER the keyboard exactly while its form is being filled
-  // (Details and File issue were the parts that went missing). Same visual-viewport trick the
-  // Alkahest web app uses to size its dialogs.
-  private keyboardInset(): number {
-    const vv = window.visualViewport;
-    if (!vv) return 0;
-    return Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-  }
-
-  // Desktop: the panel opens adjacent to the button (same edge, just above it). Mobile
-  // (≤480px) keeps the full-width bottom sheet — the CSS media query owns its box, so only
-  // the keyboard lift is set inline there.
+  // Desktop: the panel opens adjacent to the button (same edge, just above it).
+  //
+  // Mobile: the sheet's own bottom edge is pinned to the VISUAL viewport's bottom edge, so it
+  // rides above the software keyboard (iOS does not move `position:fixed` elements when the
+  // keyboard opens — it only shrinks the visual viewport, and the form's lower half used to
+  // disappear behind it).
+  //
+  // The anchor is computed from `visualViewport` ALONE — never `window.innerHeight`. The
+  // textbook formula is `innerHeight - vv.height - vv.offsetTop`, and that is what this used to
+  // do, but on iOS 26 those two clocks disagree: once the keyboard has been opened, vv.height
+  // stays ~24px short of innerHeight and offsetTop never fully resets (WebKit 297779, a system
+  // bug Apple has acknowledged and only partly fixed in 26.1 — it comes from Safari's collapsing
+  // bottom address bar). Mixing the two therefore floated the sheet a visible band above the
+  // keyboard. `vv.offsetTop + vv.height` is self-consistent whatever innerHeight thinks.
   private placePanel() {
-    const p = this.panel!.style;
+    const el = this.panel!;
+    const p = el.style;
     if (!window.matchMedia("(min-width: 481px)").matches) {
+      const vv = window.visualViewport;
       p.left = p.right = "";
-      p.bottom = this.keyboardInset() + "px";
+      if (!vv) { p.top = "auto"; p.bottom = "0px"; return; } // pre-visualViewport: CSS handles it
+      // Never taller than what is actually visible, and scroll inside if it would be.
+      const room = Math.max(160, Math.round(vv.height - 8));
+      p.maxHeight = room + "px";
+      p.overflowY = "auto";
+      const h = Math.min(el.getBoundingClientRect().height || room, room);
+      p.bottom = "auto";
+      // floor, not round: a fractional sheet height should err upward, never a pixel under the
+      // keyboard's top edge.
+      p.top = Math.floor(vv.offsetTop + vv.height - h) + "px";
+      // The home-indicator inset is only real estate to avoid while the keyboard is DOWN; with
+      // it up the sheet rests on the keyboard, but env(safe-area-inset-bottom) still reports the
+      // display's inset, which would leave a dead band inside the sheet.
+      p.paddingBottom = room < document.documentElement.clientHeight - 100 ? "0px" : "";
       return;
     }
+    p.top = "auto";
+    p.maxHeight = "";
+    p.overflowY = "";
+    p.paddingBottom = "";
     p.bottom = clamp(this.pos.bottom + 60, 16, window.innerHeight - 220) + "px";
     p.left = this.pos.side === "left" ? "16px" : "auto";
     p.right = this.pos.side === "right" ? "16px" : "auto";
@@ -356,6 +375,10 @@ export class Toolbar {
       <div class="akt-head"><span>${esc(title)}</span><button class="akt-x" aria-label="Close">✕</button></div>
       <div class="akt-body">${bodyHtml}</div>`;
     p.querySelector(".akt-x")!.addEventListener("click", () => this.close());
+    // Every state swap changes the sheet's height (sign-in / form / confirm / "filed"), and on
+    // mobile the sheet is anchored by its TOP — so re-anchor now or the bottom edge drifts off
+    // the keyboard.
+    this.placePanel();
     return p.querySelector(".akt-body") as HTMLDivElement;
   }
 

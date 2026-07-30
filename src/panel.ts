@@ -60,15 +60,21 @@ const CSS = `
 .akt-row button{flex:1}
 .akt-ghost{box-sizing:border-box;border:1px solid var(--c-input);border-radius:8px;padding:0 14px;height:32px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;background:transparent;color:inherit}
 .akt-danger{background:var(--c-danger)}
-/* Phone: a bottom sheet, and every control sized for a thumb. 16px on the fields is not a
-   taste call — iOS Safari zooms the whole page when a focused field is under 16px, which
-   yanks the sheet around mid-tap and is why filling this form felt like a fight. The
-   padding bump takes the fields and buttons from ~35px to ~44px. */
+/* Phone: a bottom sheet, 16px fields, thumb-sized buttons.
+   The 16px is not a taste call — iOS Safari zooms the whole page when a focused field is under
+   16px, and a widget cannot stop that: the switch is the HOST page's viewport meta
+   (maximum-scale=1), which only the host may set. We could inject it and silently kill
+   pinch-zoom for their whole page; we don't.
+   The field HEIGHT is a taste call, and 44px was too tall: it made the widget's fields read as a
+   different product's next to the app's own 32px issue fields. 38px carries the same 16px text
+   with 6px of air, halving that gap (12px -> 6px). Tap difficulty is unchanged — the 44px
+   guideline is about small buttons, and a full-width 358x38 field is ~6.7x that recommended area.
+   Buttons stay 46px: a mis-tap there actually costs something. */
 @media (max-width:480px){
 .akt-panel{left:0;right:0;bottom:0;width:auto;max-width:none;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}
 .akt-body input,.akt-body textarea,.akt-body select{font-size:16px}
-.akt-body input,.akt-body select{height:44px;padding:0 12px}
-.akt-body textarea{min-height:88px;padding:11px 12px}
+.akt-body input,.akt-body select{height:38px;padding:0 12px}
+.akt-body textarea{min-height:88px;padding:9px 12px}
 .akt-submit,.akt-ghost{height:46px;padding:0 16px;font-size:15px}
 .akt-x{width:40px;height:40px;margin:-10px -10px -10px 0}
 }

@@ -35,7 +35,7 @@ const CSS = `
 .akt-x{border:none;background:none;cursor:pointer;font-size:16px;color:inherit;opacity:.6;padding:0;width:32px;height:32px;margin:-6px -8px -6px 0;display:flex;align-items:center;justify-content:center;flex:none}
 .akt-x:hover{opacity:1}
 /* 16px between fields / 4px label-to-control = the panel's mt-4 + mb-1 ramp (issue-fields.tsx,
-   lifted from Atlassian form spacing there). */
+   lifted from Atlassian form spacing there). Used by the non-composer states (sign-in, confirm). */
 .akt-body{padding:14px;display:flex;flex-direction:column;gap:16px}
 .akt-body label{display:flex;flex-direction:column;gap:4px}
 /* SECTION_LABEL: 12px uppercase tracking-wide muted, weight inherited (400). The text lives in a
@@ -60,6 +60,27 @@ const CSS = `
 .akt-row button{flex:1}
 .akt-ghost{box-sizing:border-box;border:1px solid var(--c-input);border-radius:8px;padding:0 14px;height:32px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;background:transparent;color:inherit}
 .akt-danger{background:var(--c-danger)}
+/* ── The composer ────────────────────────────────────────────────────────────────────────────
+   Filing an issue is a COMPOSE task, not a form to fill in: two values, one of them usually a
+   single line. Boxes, labels and a full-width button spent more than half the panel on chrome —
+   on a phone the writing area was 108px of a 449px viewport. Stripping them (the route moves to
+   the header, the send button to a toolbar row) takes it to ~250px without moving anything else.
+   The two values are unchanged: the first line is the title, the box below is the description. */
+.akt-panel[data-compose] .akt-body{padding:14px;gap:6px;flex:1;min-height:0}
+.akt-head .akt-route-h{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:400;color:var(--c-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.akt-body .akt-title,.akt-body .akt-desc{border:0;border-radius:0;background:transparent;color:var(--c-ink);font-family:inherit;padding:0;height:auto;outline:none;box-shadow:none;caret-color:var(--c-brand)}
+.akt-body .akt-title{font-size:15px;font-weight:600;line-height:1.4;flex:none}
+.akt-body .akt-desc{font-size:14px;line-height:1.55;resize:none;flex:1;min-height:120px}
+/* the composer has no boxes, so focus is the caret — a ring around bare text would be noise */
+.akt-body .akt-title:focus,.akt-body .akt-desc:focus{border:0;box-shadow:none}
+.akt-body .akt-title::placeholder,.akt-body .akt-desc::placeholder{color:var(--c-muted)}
+.akt-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-top:1px solid var(--c-line);flex:none}
+.akt-barleft{display:flex;align-items:center;gap:10px;min-width:0}
+.akt-chip{appearance:none;-webkit-appearance:none;border:1px solid var(--c-line);border-radius:999px;padding:5px 11px;font:inherit;font-size:12px;color:var(--c-muted);background:transparent;max-width:150px;outline:none}
+.akt-hint{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--c-muted)}
+.akt-send{box-sizing:border-box;border:0;border-radius:8px;height:32px;padding:0 14px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;background:var(--c-primary);color:var(--c-primary-ink);display:flex;align-items:center;justify-content:center;flex:none}
+.akt-send:disabled{opacity:.35;cursor:default}
+.akt-send .akt-send-icon{display:none;font-size:15px;line-height:1}
 /* Phone: a bottom sheet, 16px fields, thumb-sized buttons.
    The 16px is not a taste call — iOS Safari zooms the whole page when a focused field is under
    16px, and a widget cannot stop that: the switch is the HOST page's viewport meta
@@ -72,6 +93,17 @@ const CSS = `
    Buttons stay 46px: a mis-tap there actually costs something. */
 @media (max-width:480px){
 .akt-panel{left:0;right:0;bottom:0;width:auto;max-width:none;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}
+/* The composer fills the screen: square corners, no border, no card padding. A rounded top edge
+   says "a card is resting on the page"; this IS the page. Non-composer states (sign-in, confirm)
+   stay the small rounded sheet — a full screen for one sentence would be absurd. */
+.akt-panel[data-compose]{border-radius:0;border:0;padding-bottom:0}
+.akt-panel[data-compose] .akt-body .akt-title{font-size:17px}
+.akt-panel[data-compose] .akt-body .akt-desc{font-size:16px;min-height:0}
+.akt-panel[data-compose] .akt-bar{padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px))}
+.akt-hint{display:none}                                   /* no modifier keys on a phone */
+.akt-send{width:36px;height:36px;padding:0;border-radius:10px}
+.akt-send .akt-send-icon{display:block}
+.akt-send .akt-send-text{display:none}
 .akt-body input,.akt-body textarea,.akt-body select{font-size:16px}
 .akt-body input,.akt-body select{height:38px;padding:0 12px}
 .akt-body textarea{min-height:88px;padding:9px 12px}
@@ -89,8 +121,14 @@ const CSS = `
 :host(.akt-dark) .akt-dismiss.akt-armed{background:rgba(248,113,113,.18);border-color:#f87171;color:#f87171}
 :host(.akt-dark) .akt-dismiss-label{color:#a1a1aa}
 :host(.akt-dark) .akt-dismiss.akt-armed .akt-dismiss-label{color:#f87171}
+/* The composer slides up from the edge it is anchored to; the desktop card just fades in. */
+@media (max-width:480px){
+.akt-panel[data-compose]{transform:translateY(100%);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.akt-panel[data-compose][data-open]{transform:none}
+}
 /* Keep the arm signal (color) under reduced motion — it's the only other cue there is. */
-@media (prefers-reduced-motion:reduce){.akt-btn,.akt-dismiss{transition-property:background,border-color,color,opacity}}
+@media (prefers-reduced-motion:reduce){.akt-btn,.akt-dismiss{transition-property:background,border-color,color,opacity}
+.akt-panel[data-compose]{transition:none}}
 `;
 
 // Where the button rests: snapped to the left or right edge, at `bottom` px from the
@@ -319,6 +357,18 @@ export class Toolbar {
       const vv = window.visualViewport;
       p.left = p.right = "";
       if (!vv) { p.top = "auto"; p.bottom = "0px"; return; } // pre-visualViewport: CSS handles it
+      // The composer doesn't sit in the viewport — it IS the viewport. Pinning top AND height to
+      // the visual viewport means the keyboard opening simply shortens it, and the writing area
+      // (the one flex child) takes the difference.
+      if (el.hasAttribute("data-compose")) {
+        p.top = Math.round(vv.offsetTop) + "px";
+        p.height = Math.round(vv.height) + "px";
+        p.bottom = "auto";
+        p.maxHeight = "";
+        p.overflowY = "";
+        p.paddingBottom = "";
+        return;
+      }
       // Never taller than what is actually visible, and scroll inside if it would be.
       const room = Math.max(160, Math.round(vv.height - 8));
       p.maxHeight = room + "px";
@@ -335,6 +385,7 @@ export class Toolbar {
       return;
     }
     p.top = "auto";
+    p.height = "";
     p.maxHeight = "";
     p.overflowY = "";
     p.paddingBottom = "";
@@ -350,6 +401,9 @@ export class Toolbar {
     this.root.appendChild(this.panel);
     this.placePanel();
     this.render();
+    // Next frame, so the slide-up has a starting position to animate from.
+    const el = this.panel;
+    requestAnimationFrame(() => el.setAttribute("data-open", ""));
   }
 
   private close() {
@@ -369,11 +423,17 @@ export class Toolbar {
   // off, so a permanent "Turn off toolbar" line in every panel was a second door to the
   // same room, sitting under a form people use daily. `?alkahest=off` remains the typed
   // fallback, and the bubble's own tooltip names the gesture.
-  private frame(bodyHtml: string, title = "File an issue"): HTMLDivElement {
+  private frame(bodyHtml: string, title = "File an issue", bar = ""): HTMLDivElement {
     const p = this.panel!;
+    // The composer's heading is the ROUTE — the one fact the reporter needs to confirm before
+    // sending, and where Vercel's toolbar puts the branch name. Every other state keeps a title.
+    const head = bar
+      ? `<span class="akt-route-h" title="Recorded as the issue's route target">${esc(currentRoute())}</span>`
+      : `<span>${esc(title)}</span>`;
+    p.toggleAttribute("data-compose", !!bar);
     p.innerHTML = `
-      <div class="akt-head"><span>${esc(title)}</span><button class="akt-x" aria-label="Close">✕</button></div>
-      <div class="akt-body">${bodyHtml}</div>`;
+      <div class="akt-head">${head}<button class="akt-x" aria-label="Close">✕</button></div>
+      <div class="akt-body">${bodyHtml}</div>${bar}`;
     p.querySelector(".akt-x")!.addEventListener("click", () => this.close());
     // Every state swap changes the sheet's height (sign-in / form / confirm / "filed"), and on
     // mobile the sheet is anchored by its TOP — so re-anchor now or the bottom edge drifts off
@@ -446,30 +506,53 @@ export class Toolbar {
     }
     const pickable = !this.cfg.issueMap && (this.maps?.length ?? 0) > 1;
 
+    // No labels on screen, so the fields carry their names in aria-label. The bar holds what the
+    // form's last row used to: the map picker (only when there is a choice) and the send button.
     const body = this.frame(`
-      <div class="akt-route" title="Recorded as the issue's route target">${esc(currentRoute())}</div>
-      ${pickable ? `<label><span class="akt-lab">Issue map</span><select>${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select></label>` : ""}
-      <label><span class="akt-lab">Title</span><input maxlength="200" placeholder="What's wrong?"></label>
-      <label><span class="akt-lab">Description</span><textarea placeholder="What did you expect? What happened?"></textarea></label>
-      <p class="akt-err" hidden></p>
-      <button class="akt-submit">File issue</button>`);
+      <input class="akt-title" maxlength="200" aria-label="Title" placeholder="What's wrong?">
+      <textarea class="akt-desc" aria-label="Description" placeholder="What did you expect? What happened?"></textarea>
+      <p class="akt-err" hidden></p>`,
+      "File an issue",
+      `<div class="akt-bar">
+        <span class="akt-barleft">
+          ${pickable ? `<select class="akt-chip" aria-label="Issue map">${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select>` : ""}
+          <span class="akt-hint">⌘↵</span>
+        </span>
+        <button class="akt-send" aria-label="File issue" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span></button>
+      </div>`);
 
+    const panel = this.panel!;
     const err = body.querySelector(".akt-err") as HTMLParagraphElement;
-    const submit = body.querySelector(".akt-submit") as HTMLButtonElement;
+    const titleEl = body.querySelector(".akt-title") as HTMLInputElement;
+    const descEl = body.querySelector(".akt-desc") as HTMLTextAreaElement;
+    const submit = panel.querySelector(".akt-send") as HTMLButtonElement;
+
+    // Nothing to send without a title, so the button says so instead of an error message after
+    // the fact. (The old form only found out on click.)
+    const sync = () => { submit.disabled = !titleEl.value.trim(); };
+    titleEl.addEventListener("input", sync);
+    // Enter on the title line moves to the description — a title is one line by definition.
+    titleEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); descEl.focus(); }
+    });
+    // ⌘↵ / Ctrl↵ sends from either field, the composer convention.
+    const sendOnModEnter = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !submit.disabled) { e.preventDefault(); submit.click(); }
+    };
+    titleEl.addEventListener("keydown", sendOnModEnter);
+    descEl.addEventListener("keydown", sendOnModEnter);
+    titleEl.focus({ preventScroll: true });
+
     submit.addEventListener("click", async () => {
-      const title = (body.querySelector("input") as HTMLInputElement).value.trim();
-      if (!title) {
-        err.hidden = false;
-        err.textContent = "A title is required.";
-        return;
-      }
+      const title = titleEl.value.trim();
+      if (!title) return;
       submit.disabled = true;
       err.hidden = true;
       try {
         await createIssue(this.cfg, token, {
           title,
-          details: (body.querySelector("textarea") as HTMLTextAreaElement).value.trim(),
-          mapSlug: this.cfg.issueMap ?? (body.querySelector("select") as HTMLSelectElement | null)?.value ?? null,
+          details: descEl.value.trim(),
+          mapSlug: this.cfg.issueMap ?? (panel.querySelector(".akt-chip") as HTMLSelectElement | null)?.value ?? null,
         });
         this.frame(`<p class="akt-muted">Issue filed. Thanks! It's now in <b>${esc(this.cfg.project)}</b>'s pool, anchored to <b>${esc(currentRoute())}</b>.</p>`);
       } catch (e) {

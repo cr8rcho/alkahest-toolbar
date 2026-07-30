@@ -132,8 +132,22 @@ re-resolves whenever `<html>`/`<body>` change their `class`, `style` or `data-th
   the button on it asks to turn the toolbar off (it doesn't turn off immediately — that
   also signs this browser out, so it confirms first). Cancelling puts the button back where
   it was; the drop position is never saved.
-- The panel opens next to the button's resting spot on desktop, and as a full-width
-  bottom sheet on small screens (≤ 480 px).
+- The panel opens next to the button's resting spot on desktop (a 340 px card), and on a phone
+  (≤ 480 px) it slides up and **fills the screen** — square corners, because it is the screen and
+  not a card resting on one.
+
+## The composer
+
+Filing an issue is a compose task, not a form to fill in, so the panel is written like one:
+
+- **No boxes, no labels.** The first line is the **title** (bold), the block under it the
+  **description** — the same two values as before, told apart by weight instead of by borders.
+  Both carry `aria-label`s for assistive tech.
+- **The route is the heading** — the one fact worth confirming before you send.
+- **A toolbar row at the bottom** holds the issue-map picker (only when your project has more than
+  one, and you didn't pin one) and the send control: a 36 px icon on a phone, a compact
+  `File issue` button with a `⌘↵` hint on desktop. It stays disabled until there is a title.
+- **Enter on the title line** moves to the description; **⌘↵ / Ctrl↵** sends from either field.
 
 ## Security model
 

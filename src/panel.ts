@@ -77,12 +77,9 @@ const CSS = `
 .akt-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-top:1px solid var(--c-line);flex:none}
 .akt-barleft{display:flex;align-items:center;gap:10px;min-width:0}
 .akt-chip{appearance:none;-webkit-appearance:none;border:1px solid var(--c-line);border-radius:999px;padding:5px 11px;font:inherit;font-size:12px;color:var(--c-muted);background:transparent;max-width:150px;outline:none}
-/* The shortcut belongs to the button, not to the bar: alone on the left it read as a stray glyph.
-   And it is SPELLED, not drawn — "⌘↵" mixed two symbols whose glyphs disagree about size and
-   baseline (U+2318 sits high and small, U+21B5 low and heavy), so however the box was centred the
-   pair looked crooked. The modifier keeps its symbol on a Mac (everyone reads it), the key is the
-   word, and both ride the button's own font, so they share its baseline exactly. */
-.akt-hint{font-family:inherit;font-size:11px;font-weight:500;opacity:.5;letter-spacing:.01em;white-space:nowrap}
+/* No visible shortcut hint. It was tried twice — beside the button, then inside it — and read as
+   clutter both times on a control whose whole point was to stop being one. Cmd/Ctrl+Enter still
+   sends; the button's title attribute says so on hover, which is where power users look anyway. */
 .akt-send{box-sizing:border-box;border:0;border-radius:8px;height:32px;padding:0 12px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;background:var(--c-primary);color:var(--c-primary-ink);display:flex;align-items:center;justify-content:center;gap:7px;flex:none}
 .akt-send:disabled{opacity:.35;cursor:default}
 .akt-send .akt-send-icon{display:none;font-size:15px;line-height:1}
@@ -105,7 +102,6 @@ const CSS = `
 .akt-panel[data-compose] .akt-body .akt-title{font-size:17px}
 .akt-panel[data-compose] .akt-body .akt-desc{font-size:16px;min-height:0}
 .akt-panel[data-compose] .akt-bar{padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px))}
-.akt-hint{display:none}                                   /* no modifier keys on a phone */
 .akt-send{gap:0}
 .akt-send{width:36px;height:36px;padding:0;border-radius:10px}
 .akt-send .akt-send-icon{display:block}
@@ -144,7 +140,7 @@ const POS_KEY = "alkahest.toolbar.pos";
 type ButtonPos = { side: "left" | "right"; bottom: number };
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
-// Send shortcut, spelled the way the platform names it.
+// Named the way the platform does — for the button's tooltip, not for the screen.
 const MOD_LABEL = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent) ? "⌘ Enter" : "Ctrl Enter";
 
 // Drag-to-dismiss (the Vercel-toolbar gesture): while dragging, a target circle rises at
@@ -526,7 +522,7 @@ export class Toolbar {
         <span class="akt-barleft">
           ${pickable ? `<select class="akt-chip" aria-label="Issue map">${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select>` : ""}
         </span>
-        <button class="akt-send" aria-label="File issue" title="File issue (${MOD_LABEL})" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span><span class="akt-hint">${MOD_LABEL}</span></button>
+        <button class="akt-send" aria-label="File issue" title="File issue (${MOD_LABEL})" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span></button>
       </div>`);
 
     const panel = this.panel!;

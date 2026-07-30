@@ -45,5 +45,6 @@ export function autoInit(): void {
     issueMap: script?.dataset.issueMap,
     apiBase: script?.dataset.apiBase,
     webBase: script?.dataset.webBase,
+    theme: script?.dataset.theme as "auto" | "light" | "dark" | undefined,
   });
 }

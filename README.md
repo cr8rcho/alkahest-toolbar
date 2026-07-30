@@ -16,7 +16,8 @@ secret key in your page source: the only thing you embed is your project's publi
 - Zero dependencies, framework-free vanilla TS
 - ~10 kB minified IIFE (or an ESM build for bundlers)
 - Shadow DOM — host-page CSS can't leak in, toolbar CSS can't leak out
-- Light/dark via `prefers-color-scheme`
+- Light/dark **follows the host page** — its `<html>` `color-scheme`, else the page's own
+  background, else the OS preference; pin it with `data-theme` if you'd rather decide
 
 ## Install
 
@@ -38,6 +39,7 @@ Configuration rides on the same tag as data attributes:
 | `data-issue-map` | | Issue-map slug to file into. Omit to let the server resolve the sole map, or to show a picker when the project has several. |
 | `data-api-base` | | Override the Alkahest API base (self-hosted backends). |
 | `data-web-base` | | Override the Alkahest web app base (where the consent page lives). |
+| `data-theme` | | `auto` (default) / `light` / `dark`. Pin it when your site themes itself in a way the toolbar can't read — see [Theme](#theme). |
 
 The IIFE also exposes `window.Alkahest.init(config)` if you'd rather init manually —
 drop the `data-alkahest-project` attribute in that case so auto-init stays out of the way.
@@ -94,17 +96,31 @@ The snippet is inert by default, so it's safe to ship on production:
 - **Drag the button onto the ✕ target** at the bottom center of the screen — the target
   rises as soon as a drag starts, arms (red, larger) when the button comes within ~72 px of
   it, and dropping there opens the turn-off confirmation.
-- **Turn off toolbar** in the panel's footer does the same thing from the UI (confirm step,
-  then the toolbar unmounts on the spot) — the URL flag is fine for whoever typed
-  `?alkahest=on`, but a reporter who was walked through the sign-in flow has no way back out
-  without it. The link stays alongside the drag gesture because a drag isn't reachable from
-  the keyboard and is easy to miss on desktop.
+  Dropping is the way out from the UI: it confirms first (turning off also signs this browser
+  out), then the toolbar unmounts on the spot. There used to be a **Turn off toolbar** link in
+  every panel's footer as well; it's gone — one door to the same room is enough, and it sat
+  under a form people use daily. `?alkahest=off` remains the typed fallback, which is also the
+  only path that doesn't need a pointer.
 
 > **SPA note:** the toolbar reads the activation flag and the returning consent code both
 > at load and when the panel opens, so client-router navigations that rewrite the URL
 > don't strand either. If your app normalizes the query string on boot, make sure it
 > preserves params it doesn't own — otherwise `?alkahest=on` can be erased before any
 > lazy-loaded script sees it.
+
+## Theme
+
+The toolbar lives inside *your* page, so the OS preference is the wrong authority: a dark site
+visited from a light-mode laptop would get a glowing white panel. It resolves in this order and
+re-resolves whenever `<html>`/`<body>` change their `class`, `style` or `data-theme`:
+
+1. **`data-theme` on the script tag** (`light` / `dark`) — you decide, nothing is sniffed.
+2. **`color-scheme` on `<html>`** — the standard declaration a themed site already makes. If
+   you support dark mode, declaring it is worth doing anyway: it also fixes native form
+   controls and scrollbars.
+3. **The page's own background luminance** (`<body>`, then `<html>`) — for sites that theme with
+   just a `.dark` class and never declare `color-scheme`.
+4. **`prefers-color-scheme`** — only when the page declares nothing and paints nothing.
 
 ## The button
 
@@ -114,8 +130,8 @@ The snippet is inert by default, so it's safe to ship on production:
   drag never does.
 - **Drag to dismiss:** while dragging, a ✕ target appears at the bottom center. Dropping
   the button on it asks to turn the toolbar off (it doesn't turn off immediately — that
-  also signs this browser out, so it goes through the same confirmation as the footer
-  link). Cancelling puts the button back where it was; the drop position is never saved.
+  also signs this browser out, so it confirms first). Cancelling puts the button back where
+  it was; the drop position is never saved.
 - The panel opens next to the button's resting spot on desktop, and as a full-width
   bottom sheet on small screens (≤ 480 px).
 

@@ -1,6 +1,7 @@
 // The toolbar UI: a floating button (bottom-right) opening an issue form — a card on
 // desktop, a bottom sheet on small screens. Vanilla DOM, no framework, `akt-` class
-// namespace, colors keyed to prefers-color-scheme so it sits quietly on any host page.
+// namespace, and a theme that follows the HOST PAGE (its <html> `color-scheme`, with the OS
+// preference as the fallback) so it sits quietly on any host page, dark or light.
 import { ApiError, createIssue, currentRoute, listIssueMaps, type IssueMapOption } from "./api";
 import { clearToken, deactivate, getToken, pickUpHandoffCode, signInUrl } from "./auth";
 import type { ResolvedConfig } from "./config";
@@ -34,9 +35,6 @@ const CSS = `
 .akt-muted{color:#71717a;margin:0}
 .akt-err{color:#dc2626;margin:0}
 .akt-route{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#71717a;background:rgba(113,113,122,.1);border-radius:6px;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.akt-foot{display:flex;justify-content:flex-end;padding:8px 14px;border-top:1px solid #e4e4e7}
-.akt-link{border:none;background:none;padding:6px 0;font:inherit;font-size:12px;color:#71717a;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
-.akt-link:hover{color:#dc2626}
 .akt-row{display:flex;gap:8px}
 .akt-row button{flex:1}
 .akt-ghost{border:1px solid #d4d4d8;border-radius:8px;padding:9px 12px;font:inherit;font-weight:600;cursor:pointer;background:transparent;color:inherit}
@@ -51,9 +49,20 @@ const CSS = `
 .akt-body textarea{min-height:88px}
 .akt-submit,.akt-ghost{padding:12px 14px;font-size:15px}
 .akt-x{width:40px;height:40px;margin:-10px -10px -10px 0}
-.akt-link{padding:10px 0}
 }
-@media (prefers-color-scheme:dark){.akt-panel{background:#18181b;color:#fafafa;border-color:#27272a}.akt-head,.akt-foot{border-color:#27272a}.akt-body input,.akt-body textarea,.akt-body select,.akt-ghost{border-color:#3f3f46}.akt-dismiss{background:rgba(24,24,27,.7);border-color:rgba(250,250,250,.24);color:#a1a1aa}.akt-dismiss.akt-armed{background:rgba(248,113,113,.18);border-color:#f87171;color:#f87171}.akt-dismiss-label{color:#a1a1aa}.akt-dismiss.akt-armed .akt-dismiss-label{color:#f87171}}
+/* Dark is keyed to a class on the shadow host, not prefers-color-scheme, because the OS is
+   the wrong authority here: the toolbar sits INSIDE a page, and a site can be dark while the
+   OS is light (alkahest.app itself defaults to dark). JS resolves which one to use — see
+   resolveTheme() — and the OS preference is only the last fallback. color-scheme on the host
+   makes the native bits inside the shadow tree (select popup, caret, scrollbars) follow too. */
+:host(.akt-dark){color-scheme:dark}
+:host(.akt-dark) .akt-panel{background:#18181b;color:#fafafa;border-color:#27272a}
+:host(.akt-dark) .akt-head{border-color:#27272a}
+:host(.akt-dark) .akt-body input,:host(.akt-dark) .akt-body textarea,:host(.akt-dark) .akt-body select,:host(.akt-dark) .akt-ghost{border-color:#3f3f46}
+:host(.akt-dark) .akt-dismiss{background:rgba(24,24,27,.7);border-color:rgba(250,250,250,.24);color:#a1a1aa}
+:host(.akt-dark) .akt-dismiss.akt-armed{background:rgba(248,113,113,.18);border-color:#f87171;color:#f87171}
+:host(.akt-dark) .akt-dismiss-label{color:#a1a1aa}
+:host(.akt-dark) .akt-dismiss.akt-armed .akt-dismiss-label{color:#f87171}
 /* Keep the arm signal (color) under reduced motion — it's the only other cue there is. */
 @media (prefers-reduced-motion:reduce){.akt-btn,.akt-dismiss{transition-property:background,border-color,color,opacity}}
 `;
@@ -79,9 +88,12 @@ export class Toolbar {
   private pos: ButtonPos = { side: "right", bottom: 16 };
   private suppressClick = false;
   private pendingOff = false; // the confirm sheet was opened by a drop, so the button is hidden
+  private theme: "light" | "dark" | null = null;
+  private themeWatch: MutationObserver | null = null;
   private onResize = () => this.applyPos();
   // The keyboard opening/closing is a visual-viewport event, not a window resize.
   private onViewport = () => { if (this.panel) this.placePanel(); };
+  private onScheme = () => this.applyTheme();
 
   constructor(private cfg: ResolvedConfig) {
     // Shadow DOM keeps host-page CSS out of the toolbar and vice versa.
@@ -120,7 +132,46 @@ export class Toolbar {
     window.addEventListener("resize", this.onResize);
     window.visualViewport?.addEventListener("resize", this.onViewport);
     window.visualViewport?.addEventListener("scroll", this.onViewport);
+    // Follow the host page's theme live: a site toggle changes an attribute on <html> (a
+    // class, a data-theme, or an inline color-scheme), so watch those and re-resolve. The
+    // media-query listener covers the OS-preference fallback.
+    this.applyTheme();
+    this.themeWatch = new MutationObserver(this.onScheme);
+    // <html> AND <body>: sites put their theme switch on either one (Tailwind's `.dark`, a
+    // `data-theme`, an inline `color-scheme`), and the luminance step reads body's background.
+    for (const el of [document.documentElement, document.body]) {
+      if (el) this.themeWatch.observe(el, { attributes: true, attributeFilter: ["style", "class", "data-theme"] });
+    }
+    window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", this.onScheme);
     this.wireDrag();
+  }
+
+  // Which theme to wear. The host PAGE decides, not the OS — a widget that reads only
+  // `prefers-color-scheme` glows white on a dark site whose visitor keeps a light OS.
+  // In order:
+  //   1. an explicit `theme` in the config (`data-theme` on the script tag) — for sites whose
+  //      CSS declares nothing readable,
+  //   2. the root element's computed `color-scheme`: the standard declaration a themed site
+  //      already makes (alkahest.app writes it inline on <html> when the theme flips),
+  //   3. the page's own background luminance — plenty of sites do dark mode with just a
+  //      `.dark` class and never declare `color-scheme`, and against those the toolbar has to
+  //      read the pixels it is sitting on rather than trust the OS,
+  //   4. the OS preference, for pages that say nothing and paint nothing (transparent bg).
+  private resolveTheme(): "light" | "dark" {
+    if (this.cfg.theme === "dark" || this.cfg.theme === "light") return this.cfg.theme;
+    const cs = getComputedStyle(document.documentElement).colorScheme || "";
+    const dark = /\bdark\b/.test(cs), light = /\blight\b/.test(cs);
+    if (dark !== light) return dark ? "dark" : "light"; // exactly one → the page committed
+    const lum = pageLuminance();
+    if (lum !== null) return lum < 0.4 ? "dark" : "light";
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  private applyTheme() {
+    const t = this.resolveTheme();
+    if (t === this.theme) return;
+    this.theme = t;
+    this.host.classList.toggle("akt-dark", t === "dark");
   }
 
   // Snap the button to its resting spot (edge + bottom offset), re-clamped to the viewport.
@@ -269,16 +320,16 @@ export class Toolbar {
     this.btn.classList.remove("akt-gone");
   }
 
-  // `off: true` adds the quiet footer escape hatch — without it the only way out is the
-  // ?alkahest=off URL, which nobody but the person who typed ?alkahest=on knows about.
-  private frame(bodyHtml: string, off = false, title = "File an issue"): HTMLDivElement {
+  // No footer escape hatch any more: the drag-to-dismiss gesture (2026-07-29) is the way
+  // off, so a permanent "Turn off toolbar" line in every panel was a second door to the
+  // same room, sitting under a form people use daily. `?alkahest=off` remains the typed
+  // fallback, and the bubble's own tooltip names the gesture.
+  private frame(bodyHtml: string, title = "File an issue"): HTMLDivElement {
     const p = this.panel!;
     p.innerHTML = `
       <div class="akt-head"><span>${esc(title)}</span><button class="akt-x" aria-label="Close">✕</button></div>
-      <div class="akt-body">${bodyHtml}</div>
-      ${off ? `<div class="akt-foot"><button class="akt-link">Turn off toolbar</button></div>` : ""}`;
+      <div class="akt-body">${bodyHtml}</div>`;
     p.querySelector(".akt-x")!.addEventListener("click", () => this.close());
-    p.querySelector(".akt-link")?.addEventListener("click", () => this.confirmOff());
     return p.querySelector(".akt-body") as HTMLDivElement;
   }
 
@@ -290,7 +341,7 @@ export class Toolbar {
       <div class="akt-row">
         <button class="akt-ghost">Cancel</button>
         <button class="akt-submit akt-danger">Turn off</button>
-      </div>`, false, "Turn off toolbar");
+      </div>`, "Turn off toolbar");
     // Cancelling a drop puts things back the way they were (button visible, no panel);
     // cancelling the footer link just returns to the form.
     body.querySelector(".akt-ghost")!.addEventListener("click", () => {
@@ -309,6 +360,8 @@ export class Toolbar {
     window.removeEventListener("resize", this.onResize);
     window.visualViewport?.removeEventListener("resize", this.onViewport);
     window.visualViewport?.removeEventListener("scroll", this.onViewport);
+    this.themeWatch?.disconnect();
+    window.matchMedia?.("(prefers-color-scheme: dark)").removeEventListener?.("change", this.onScheme);
     this.host.remove();
   }
 
@@ -325,7 +378,7 @@ export class Toolbar {
     if (!token) {
       const body = this.frame(`
         <p class="akt-muted">Sign in with your Alkahest account to file issues for <b>${esc(this.cfg.project)}</b> right from this page.</p>
-        <button class="akt-submit">Sign in with Alkahest</button>`, true);
+        <button class="akt-submit">Sign in with Alkahest</button>`);
       body.querySelector("button")!.addEventListener("click", () => {
         location.href = signInUrl(this.cfg);
       });
@@ -350,7 +403,7 @@ export class Toolbar {
       <label>Title<input maxlength="200" placeholder="What's wrong?"></label>
       <label>Details<textarea placeholder="What did you expect? What happened?"></textarea></label>
       <p class="akt-err" hidden></p>
-      <button class="akt-submit">File issue</button>`, true);
+      <button class="akt-submit">File issue</button>`);
 
     const err = body.querySelector(".akt-err") as HTMLParagraphElement;
     const submit = body.querySelector(".akt-submit") as HTMLButtonElement;
@@ -369,7 +422,7 @@ export class Toolbar {
           details: (body.querySelector("textarea") as HTMLTextAreaElement).value.trim(),
           mapSlug: this.cfg.issueMap ?? (body.querySelector("select") as HTMLSelectElement | null)?.value ?? null,
         });
-        this.frame(`<p class="akt-muted">Issue filed. Thanks! It's now in <b>${esc(this.cfg.project)}</b>'s pool, anchored to <b>${esc(currentRoute())}</b>.</p>`, true);
+        this.frame(`<p class="akt-muted">Issue filed. Thanks! It's now in <b>${esc(this.cfg.project)}</b>'s pool, anchored to <b>${esc(currentRoute())}</b>.</p>`);
       } catch (e) {
         this.fail(e, body, submit);
       }
@@ -394,6 +447,24 @@ export class Toolbar {
       this.frame(`<p class="akt-err">${esc(msg)}</p>`);
     }
   }
+}
+
+// The luminance of whatever the page actually painted behind us: body first, then <html>
+// (body is transparent on plenty of sites). Returns null when neither paints anything opaque,
+// which is the one case where the OS preference is the best guess left. Best effort by design
+// — a background image or gradient reads as its base color, and that is fine: the toolbar only
+// needs to know whether it is sitting on something dark.
+function pageLuminance(): number | null {
+  for (const el of [document.body, document.documentElement]) {
+    if (!el) continue;
+    const m = /^rgba?\(([^)]+)\)$/.exec(getComputedStyle(el).backgroundColor || "");
+    if (!m) continue;
+    const [r, g, b, a = 1] = m[1].split(/[,\s/]+/).filter(Boolean).map(Number);
+    if (![r, g, b].every((v) => Number.isFinite(v)) || a < 0.5) continue; // see-through, keep looking
+    // Rec. 601 luma is plenty for a light/dark decision and needs no gamma work.
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  }
+  return null;
 }
 
 function esc(s: string): string {

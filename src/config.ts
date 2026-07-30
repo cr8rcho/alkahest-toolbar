@@ -11,10 +11,17 @@ export interface ToolbarConfig {
   apiBase?: string;
   /** Alkahest web app base (consent page lives there). */
   webBase?: string;
+  /**
+   * Colour scheme. Default "auto": follow the host page's `color-scheme` on <html>, falling
+   * back to the OS preference when the page declares nothing. Pin it when your site themes
+   * itself in a way the toolbar cannot read.
+   */
+  theme?: "auto" | "light" | "dark";
 }
 
-export interface ResolvedConfig extends Required<Omit<ToolbarConfig, "issueMap">> {
+export interface ResolvedConfig extends Required<Omit<ToolbarConfig, "issueMap" | "theme">> {
   issueMap: string | null;
+  theme: "auto" | "light" | "dark";
 }
 
 export const DEFAULTS = {
@@ -31,5 +38,6 @@ export function resolveConfig(cfg: ToolbarConfig): ResolvedConfig {
     issueMap: cfg.issueMap?.trim() || null,
     apiBase: (cfg.apiBase || DEFAULTS.apiBase).replace(/\/+$/, ""),
     webBase: (cfg.webBase || DEFAULTS.webBase).replace(/\/+$/, ""),
+    theme: cfg.theme === "light" || cfg.theme === "dark" ? cfg.theme : "auto",
   };
 }

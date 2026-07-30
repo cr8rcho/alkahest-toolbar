@@ -12,7 +12,7 @@ const CSS = `
    dark block below only redefines values. FONT: Inter first so a host that already loads it (our
    own app does) gets it — a widget must never download a webfont onto someone else's page. */
 :host{--c-card:#fff;--c-ink:#08090a;--c-muted:#62666d;--c-input:#e8e9eb;--c-line:#e8e9eb;
-      --c-primary:#08090a;--c-primary-ink:#fafafa;--c-danger:#eb5757;--c-brand:#6366f1;
+      --c-primary:#08090a;--c-primary-ink:#fafafa;--c-danger:#eb5757;--c-brand:#6366f1;--c-ok:#0f7a5a;
       --c-font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 .akt-btn{position:fixed;right:16px;bottom:16px;z-index:2147483000;width:48px;height:48px;border-radius:50%;border:none;cursor:grab;background:#6366f1;color:#fff;font-size:20px;line-height:1;box-shadow:0 4px 12px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;transition:transform .16s ease,background .16s ease,opacity .16s ease}
 .akt-btn:hover{filter:brightness(1.1)}
@@ -26,7 +26,9 @@ const CSS = `
 .akt-dismiss svg{width:22px;height:22px}
 .akt-dismiss-label{position:absolute;left:50%;top:-24px;transform:translateX(-50%);white-space:nowrap;font:600 11px/1 var(--c-font);letter-spacing:.04em;color:var(--c-muted)}
 .akt-dismiss.akt-armed .akt-dismiss-label{color:var(--c-danger)}
-.akt-panel{position:fixed;right:16px;bottom:76px;z-index:2147483001;width:340px;max-width:calc(100vw - 32px);border-radius:12px;background:var(--c-card);color:var(--c-ink);border:1px solid var(--c-line);box-shadow:0 12px 32px rgba(0,0,0,.25);font:14px/1.5 var(--c-font);display:flex;flex-direction:column;overflow:hidden}
+/* A fixed height on the desktop card for the same reason: a panel that grows and shrinks per
+   state makes the corner of the screen twitch. */
+.akt-panel{position:fixed;right:16px;bottom:76px;z-index:2147483001;width:340px;height:272px;max-width:calc(100vw - 32px);border-radius:12px;background:var(--c-card);color:var(--c-ink);border:1px solid var(--c-line);box-shadow:0 12px 32px rgba(0,0,0,.25);font:14px/1.5 var(--c-font);display:flex;flex-direction:column;overflow:hidden}
 /* 14px/700 = the viewer issue panel's own panel heading (viewer-issues.tsx CreateForm), not the
    dialog's 16px/500 — this is a floating panel, so it follows the panel idiom throughout. */
 .akt-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--c-line);font-weight:700}
@@ -66,7 +68,14 @@ const CSS = `
    on a phone the writing area was 108px of a 449px viewport. Stripping them (the route moves to
    the header, the send button to a toolbar row) takes it to ~250px without moving anything else.
    The two values are unchanged: the first line is the title, the box below is the description. */
-.akt-panel[data-compose] .akt-body{padding:14px;gap:6px;flex:1;min-height:0}
+.akt-body{flex:1;min-height:0}
+/* Short states (sign-in, the filed confirmation, an error) centre their one message instead of
+   pinning it to the top of an otherwise empty shell. */
+.akt-body[data-center]{align-items:center;justify-content:center;text-align:center;gap:14px;padding:22px}
+.akt-msg{margin:0;font-size:15px;color:var(--c-muted);max-width:28ch}
+.akt-msg b{color:var(--c-ink);font-weight:600}
+.akt-tick{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;background:color-mix(in srgb,var(--c-ok) 18%,transparent);color:var(--c-ok)}
+.akt-body:not([data-center]){padding:14px;gap:6px}
 .akt-head .akt-route-h{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:400;color:var(--c-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .akt-body .akt-title,.akt-body .akt-desc{border:0;border-radius:0;background:transparent;color:var(--c-ink);font-family:inherit;padding:0;height:auto;outline:none;box-shadow:none;caret-color:var(--c-brand)}
 .akt-body .akt-title{font-size:15px;font-weight:600;line-height:1.4;flex:none}
@@ -94,14 +103,16 @@ const CSS = `
    guideline is about small buttons, and a full-width 358x38 field is ~6.7x that recommended area.
    Buttons stay 46px: a mis-tap there actually costs something. */
 @media (max-width:480px){
-.akt-panel{left:0;right:0;bottom:0;width:auto;max-width:none;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}
-/* The composer fills the screen: square corners, no border, no card padding. A rounded top edge
-   says "a card is resting on the page"; this IS the page. Non-composer states (sign-in, confirm)
-   stay the small rounded sheet — a full screen for one sentence would be absurd. */
-.akt-panel[data-compose]{border-radius:0;border:0;padding-bottom:0}
-.akt-panel[data-compose] .akt-body .akt-title{font-size:17px}
-.akt-panel[data-compose] .akt-body .akt-desc{font-size:16px;min-height:0}
-.akt-panel[data-compose] .akt-bar{padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px))}
+/* The panel fills the screen — in EVERY state, not just the composer. Sign-in used to arrive as a
+   180px sheet, the map fetch as a 97px sliver, the confirmation as a near-full-height rounded card
+   (that last one a bug): four windows in one flow, three of them left over from the design the
+   composer replaced. One shell that stays put while its contents change reads as one thing.
+   Square corners for the same reason as before: a rounded top edge says "a card is resting on the
+   page", and this is the page. */
+.akt-panel{left:0;right:0;top:0;bottom:0;width:auto;height:auto;max-width:none;border:0;border-radius:0;padding-bottom:0}
+.akt-body .akt-title{font-size:17px}
+.akt-body .akt-desc{font-size:16px;min-height:0}
+.akt-bar{padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px))}
 .akt-send{gap:0}
 .akt-send{width:36px;height:36px;padding:0;border-radius:10px}
 .akt-send .akt-send-icon{display:block}
@@ -118,19 +129,19 @@ const CSS = `
    resolveTheme() — and the OS preference is only the last fallback. color-scheme on the host
    makes the native bits inside the shadow tree (select popup, caret, scrollbars) follow too. */
 :host(.akt-dark){color-scheme:dark;--c-card:#161718;--c-ink:#f7f8f8;--c-muted:#8a8f98;--c-input:#26282c;
-                 --c-line:#23252a;--c-primary:#f7f8f8;--c-primary-ink:#08090a}
+                 --c-line:#23252a;--c-primary:#f7f8f8;--c-primary-ink:#08090a;--c-ok:#3dbd94}
 :host(.akt-dark) .akt-dismiss{background:rgba(24,24,27,.7);border-color:rgba(250,250,250,.24);color:#a1a1aa}
 :host(.akt-dark) .akt-dismiss.akt-armed{background:rgba(248,113,113,.18);border-color:#f87171;color:#f87171}
 :host(.akt-dark) .akt-dismiss-label{color:#a1a1aa}
 :host(.akt-dark) .akt-dismiss.akt-armed .akt-dismiss-label{color:#f87171}
 /* The composer slides up from the edge it is anchored to; the desktop card just fades in. */
 @media (max-width:480px){
-.akt-panel[data-compose]{transform:translateY(100%);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
-.akt-panel[data-compose][data-open]{transform:none}
+.akt-panel{transform:translateY(100%);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.akt-panel[data-open]{transform:none}
 }
 /* Keep the arm signal (color) under reduced motion — it's the only other cue there is. */
 @media (prefers-reduced-motion:reduce){.akt-btn,.akt-dismiss{transition-property:background,border-color,color,opacity}
-.akt-panel[data-compose]{transition:none}}
+.akt-panel{transition:none}}
 `;
 
 // Where the button rests: snapped to the left or right edge, at `bottom` px from the
@@ -157,6 +168,7 @@ export class Toolbar {
   private pos: ButtonPos = { side: "right", bottom: 16 };
   private suppressClick = false;
   private pendingOff = false; // the confirm sheet was opened by a drop, so the button is hidden
+  private doneTimer = 0;
   private theme: "light" | "dark" | null = null;
   private themeWatch: MutationObserver | null = null;
   private onResize = () => this.applyPos();
@@ -362,33 +374,18 @@ export class Toolbar {
       const vv = window.visualViewport;
       p.left = p.right = "";
       if (!vv) { p.top = "auto"; p.bottom = "0px"; return; } // pre-visualViewport: CSS handles it
-      // The composer doesn't sit in the viewport — it IS the viewport. Pinning top AND height to
-      // the visual viewport means the keyboard opening simply shortens it, and the writing area
-      // (the one flex child) takes the difference.
-      if (el.hasAttribute("data-compose")) {
-        p.top = Math.round(vv.offsetTop) + "px";
-        p.height = Math.round(vv.height) + "px";
-        p.bottom = "auto";
-        p.maxHeight = "";
-        p.overflowY = "";
-        p.paddingBottom = "";
-        return;
-      }
-      // Never taller than what is actually visible, and scroll inside if it would be.
-      const room = Math.max(160, Math.round(vv.height - 8));
-      p.maxHeight = room + "px";
-      p.overflowY = "auto";
-      const h = Math.min(el.getBoundingClientRect().height || room, room);
+      // The panel doesn't sit in the viewport — it IS the viewport. Pinning top AND height to the
+      // visual viewport means the keyboard opening simply shortens it, and the body (the one flex
+      // child) takes the difference.
+      p.top = Math.round(vv.offsetTop) + "px";
+      p.height = Math.round(vv.height) + "px";
       p.bottom = "auto";
-      // floor, not round: a fractional sheet height should err upward, never a pixel under the
-      // keyboard's top edge.
-      p.top = Math.floor(vv.offsetTop + vv.height - h) + "px";
-      // The home-indicator inset is only real estate to avoid while the keyboard is DOWN; with
-      // it up the sheet rests on the keyboard, but env(safe-area-inset-bottom) still reports the
-      // display's inset, which would leave a dead band inside the sheet.
-      p.paddingBottom = room < document.documentElement.clientHeight - 100 ? "0px" : "";
+      p.maxHeight = "";
+      p.overflowY = "";
+      p.paddingBottom = "";
       return;
     }
+
     p.top = "auto";
     p.height = "";
     p.maxHeight = "";
@@ -412,6 +409,7 @@ export class Toolbar {
   }
 
   private close() {
+    clearTimeout(this.doneTimer);
     this.panel?.remove();
     this.panel = null;
     this.keepOn();
@@ -428,17 +426,18 @@ export class Toolbar {
   // off, so a permanent "Turn off toolbar" line in every panel was a second door to the
   // same room, sitting under a form people use daily. `?alkahest=off` remains the typed
   // fallback, and the bubble's own tooltip names the gesture.
-  private frame(bodyHtml: string, title = "File an issue", bar = ""): HTMLDivElement {
+  // Every state is the same shell — heading, body, bar — so moving between them changes what the
+  // panel says, not what it is. The heading is always the ROUTE: the one fact worth confirming
+  // before sending, and where Vercel's toolbar puts the branch name.
+  private frame(bodyHtml: string, opts: { center?: boolean; bar?: string } = {}): HTMLDivElement {
     const p = this.panel!;
-    // The composer's heading is the ROUTE — the one fact the reporter needs to confirm before
-    // sending, and where Vercel's toolbar puts the branch name. Every other state keeps a title.
-    const head = bar
-      ? `<span class="akt-route-h" title="Recorded as the issue's route target">${esc(currentRoute())}</span>`
-      : `<span>${esc(title)}</span>`;
-    p.toggleAttribute("data-compose", !!bar);
     p.innerHTML = `
-      <div class="akt-head">${head}<button class="akt-x" aria-label="Close">✕</button></div>
-      <div class="akt-body">${bodyHtml}</div>${bar}`;
+      <div class="akt-head">
+        <span class="akt-route-h" title="Recorded as the issue's route target">${esc(currentRoute())}</span>
+        <button class="akt-x" aria-label="Close">✕</button>
+      </div>
+      <div class="akt-body"${opts.center ? " data-center" : ""}>${bodyHtml}</div>
+      ${opts.bar ?? ""}`;
     p.querySelector(".akt-x")!.addEventListener("click", () => this.close());
     // Every state swap changes the sheet's height (sign-in / form / confirm / "filed"), and on
     // mobile the sheet is anchored by its TOP — so re-anchor now or the bottom edge drifts off
@@ -450,19 +449,20 @@ export class Toolbar {
   // Two-step: turning it off also signs this browser out, and re-enabling needs a URL
   // the visitor may not have handy — so say both before doing it.
   private confirmOff() {
-    const body = this.frame(`
-      <p class="akt-muted">Hide the toolbar on this browser and sign out of it. To bring it back, open this site with <b>?alkahest=on</b>.</p>
-      <div class="akt-row">
-        <button class="akt-ghost">Cancel</button>
-        <button class="akt-submit akt-danger">Turn off</button>
-      </div>`, "Turn off toolbar");
+    this.frame(
+      `<p class="akt-msg">Hide the toolbar on this browser and sign out of it. To bring it back, open this site with <b>?alkahest=on</b>.</p>`,
+      {
+        center: true,
+        bar: `<div class="akt-bar"><button class="akt-ghost">Cancel</button><button class="akt-send akt-danger">Turn off</button></div>`,
+      },
+    );
     // Cancelling a drop puts things back the way they were (button visible, no panel);
-    // cancelling the footer link just returns to the form.
-    body.querySelector(".akt-ghost")!.addEventListener("click", () => {
+    // cancelling from the composer just returns to it.
+    this.panel!.querySelector(".akt-ghost")!.addEventListener("click", () => {
       if (this.pendingOff) return this.close();
       this.render();
     });
-    body.querySelector(".akt-submit")!.addEventListener("click", () => {
+    this.panel!.querySelector(".akt-send")!.addEventListener("click", () => {
       deactivate();
       this.destroy();
     });
@@ -484,32 +484,35 @@ export class Toolbar {
     // return from /widget-auth is a soft (client-router) navigation, so the page never
     // reloads and init never re-runs. Re-check the fragment whenever the panel opens.
     if (!getToken() && /[#&]alkahest_code=/.test(location.hash)) {
-      this.frame(`<p class="akt-muted">Signing in…</p>`);
+      this.frame(`<p class="akt-msg">Signing in…</p>`, { center: true });
       await pickUpHandoffCode(this.cfg).catch(() => false);
       if (!this.panel) return; // closed while exchanging
     }
     const token = getToken();
     if (!token) {
-      const body = this.frame(`
-        <p class="akt-muted">Sign in with your Alkahest account to file issues for <b>${esc(this.cfg.project)}</b> right from this page.</p>
-        <button class="akt-submit">Sign in with Alkahest</button>`);
-      body.querySelector("button")!.addEventListener("click", () => {
+      this.frame(
+        `<p class="akt-msg">Sign in with your Alkahest account to file issues for <b>${esc(this.cfg.project)}</b> from this page.</p>`,
+        { center: true, bar: `<div class="akt-bar"><span class="akt-barleft"></span><button class="akt-send">Sign in</button></div>` },
+      );
+      this.panel!.querySelector(".akt-send")!.addEventListener("click", () => {
         location.href = signInUrl(this.cfg);
       });
       return;
     }
 
-    // Map picker only when the developer didn't pin one AND the project has several.
-    if (this.maps === null && !this.cfg.issueMap) {
-      this.frame(`<p class="akt-muted">Loading…</p>`);
-      try {
-        this.maps = await listIssueMaps(this.cfg, token);
-      } catch (e) {
-        return this.fail(e);
-      }
-      if (!this.panel) return; // closed while loading
-    }
+    // The map list is only needed to DRAW the picker — sending without a map is fine, the server
+    // resolves the project's sole issue map (ADR-011). So the composer opens immediately and the
+    // chip appears later if there turns out to be a choice; the "Loading…" state is gone. On a
+    // project with one issue map (ours) it was a 97px sliver that flashed for nothing.
     const pickable = !this.cfg.issueMap && (this.maps?.length ?? 0) > 1;
+    if (this.maps === null && !this.cfg.issueMap) {
+      listIssueMaps(this.cfg, token)
+        .then((maps) => {
+          this.maps = maps;
+          if (this.panel && maps.length > 1 && !this.panel.querySelector(".akt-chip")) this.mountMapChip();
+        })
+        .catch(() => { /* the picker simply never appears; sending still resolves server-side */ });
+    }
 
     // No labels on screen, so the fields carry their names in aria-label. The bar holds what the
     // form's last row used to: the map picker (only when there is a choice) and the send button.
@@ -517,13 +520,12 @@ export class Toolbar {
       <input class="akt-title" maxlength="200" aria-label="Title" placeholder="What's wrong?">
       <textarea class="akt-desc" aria-label="Description" placeholder="What did you expect? What happened?"></textarea>
       <p class="akt-err" hidden></p>`,
-      "File an issue",
-      `<div class="akt-bar">
+      { bar: `<div class="akt-bar">
         <span class="akt-barleft">
           ${pickable ? `<select class="akt-chip" aria-label="Issue map">${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select>` : ""}
         </span>
         <button class="akt-send" aria-label="File issue" title="File issue (${MOD_LABEL})" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span></button>
-      </div>`);
+      </div>` });
 
     const panel = this.panel!;
     const err = body.querySelector(".akt-err") as HTMLParagraphElement;
@@ -558,11 +560,31 @@ export class Toolbar {
           details: descEl.value.trim(),
           mapSlug: this.cfg.issueMap ?? (panel.querySelector(".akt-chip") as HTMLSelectElement | null)?.value ?? null,
         });
-        this.frame(`<p class="akt-muted">Issue filed. Thanks! It's now in <b>${esc(this.cfg.project)}</b>'s pool, anchored to <b>${esc(currentRoute())}</b>.</p>`);
+        this.filed();
       } catch (e) {
         this.fail(e, body, submit);
       }
     });
+  }
+
+  // The panel closes itself after the confirmation: filing one issue shouldn't cost two taps.
+  private filed() {
+    this.frame(
+      `<div class="akt-tick">✓</div><p class="akt-msg"><b>Issue filed.</b><br>${esc(this.cfg.project)} · ${esc(currentRoute())}</p>`,
+      { center: true, bar: `<div class="akt-bar"><span class="akt-barleft"></span><button class="akt-send">Done</button></div>` },
+    );
+    this.panel!.querySelector(".akt-send")!.addEventListener("click", () => this.close());
+    const wait = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 0 : 1500;
+    this.doneTimer = window.setTimeout(() => this.close(), wait);
+  }
+
+  // The map picker arrives after the composer is already on screen (see render).
+  private mountMapChip() {
+    const left = this.panel?.querySelector(".akt-barleft");
+    if (!left || !this.maps) return;
+    left.innerHTML = `<select class="akt-chip" aria-label="Issue map">${this.maps
+      .map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`)
+      .join("")}</select>`;
   }
 
   // Expired/revoked token → drop it and fall back to the sign-in state; other errors
@@ -580,7 +602,11 @@ export class Toolbar {
       err.textContent = msg;
       submit.disabled = false;
     } else {
-      this.frame(`<p class="akt-err">${esc(msg)}</p>`);
+      this.frame(`<p class="akt-msg" style="color:var(--c-danger)">${esc(msg)}</p>`, {
+        center: true,
+        bar: `<div class="akt-bar"><span class="akt-barleft"></span><button class="akt-send">Close</button></div>`,
+      });
+      this.panel!.querySelector(".akt-send")!.addEventListener("click", () => this.close());
     }
   }
 }

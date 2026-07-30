@@ -136,6 +136,20 @@ re-resolves whenever `<html>`/`<body>` change their `class`, `style` or `data-th
   (≤ 480 px) it slides up and **fills the screen** — square corners, because it is the screen and
   not a card resting on one.
 
+## One shell, four states
+
+The panel is a single window whose contents change — it does not resize or re-shape between
+states. Sign-in, the composer, the filed confirmation and the turn-off prompt all share the same
+heading (the route), body and toolbar row; short states just centre their message. On a phone that
+shell is the whole screen in every state; on desktop it is a fixed 340×272 card.
+
+There is no loading state. The issue-map list is only needed to *draw* the picker — sending
+without a map is fine, the server resolves the project's sole issue map — so the composer opens
+immediately and the picker appears later if there turns out to be a choice.
+
+Filing closes the panel by itself: the confirmation shows for 1.5s, then the toolbar gets out of
+the way (instantly under `prefers-reduced-motion`).
+
 ## The composer
 
 Filing an issue is a compose task, not a form to fill in, so the panel is written like one:

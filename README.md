@@ -146,8 +146,10 @@ Filing an issue is a compose task, not a form to fill in, so the panel is writte
 - **The route is the heading** — the one fact worth confirming before you send.
 - **A toolbar row at the bottom** holds the issue-map picker (only when your project has more than
   one, and you didn't pin one) and the send control: a 36 px icon on a phone, a compact
-  `File issue` button with a `⌘↵` hint on desktop. It stays disabled until there is a title.
-- **Enter on the title line** moves to the description; **⌘↵ / Ctrl↵** sends from either field.
+  `File issue  ⌘ Enter` button on desktop (`Ctrl Enter` off a Mac). It stays disabled until there
+  is a title.
+- **Enter on the title line** moves to the description; **⌘/Ctrl + Enter** sends from either
+  field.
 
 ## Security model
 

@@ -77,9 +77,12 @@ const CSS = `
 .akt-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-top:1px solid var(--c-line);flex:none}
 .akt-barleft{display:flex;align-items:center;gap:10px;min-width:0}
 .akt-chip{appearance:none;-webkit-appearance:none;border:1px solid var(--c-line);border-radius:999px;padding:5px 11px;font:inherit;font-size:12px;color:var(--c-muted);background:transparent;max-width:150px;outline:none}
-/* The shortcut belongs to the button, not to the bar: alone on the left it read as a stray
-   glyph. Inside, dimmed and trailing the label, it is unmistakably "this button, that key". */
-.akt-hint{font-family:ui-monospace,Menlo,monospace;font-size:11px;opacity:.55;margin-left:2px}
+/* The shortcut belongs to the button, not to the bar: alone on the left it read as a stray glyph.
+   And it is SPELLED, not drawn — "⌘↵" mixed two symbols whose glyphs disagree about size and
+   baseline (U+2318 sits high and small, U+21B5 low and heavy), so however the box was centred the
+   pair looked crooked. The modifier keeps its symbol on a Mac (everyone reads it), the key is the
+   word, and both ride the button's own font, so they share its baseline exactly. */
+.akt-hint{font-family:inherit;font-size:11px;font-weight:500;opacity:.5;letter-spacing:.01em;white-space:nowrap}
 .akt-send{box-sizing:border-box;border:0;border-radius:8px;height:32px;padding:0 12px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;background:var(--c-primary);color:var(--c-primary-ink);display:flex;align-items:center;justify-content:center;gap:7px;flex:none}
 .akt-send:disabled{opacity:.35;cursor:default}
 .akt-send .akt-send-icon{display:none;font-size:15px;line-height:1}
@@ -140,6 +143,9 @@ const CSS = `
 const POS_KEY = "alkahest.toolbar.pos";
 type ButtonPos = { side: "left" | "right"; bottom: number };
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+
+// Send shortcut, spelled the way the platform names it.
+const MOD_LABEL = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent) ? "⌘ Enter" : "Ctrl Enter";
 
 // Drag-to-dismiss (the Vercel-toolbar gesture): while dragging, a target circle rises at
 // the bottom center; the drag arms when the button's center comes within ARM_RADIUS of it.
@@ -520,7 +526,7 @@ export class Toolbar {
         <span class="akt-barleft">
           ${pickable ? `<select class="akt-chip" aria-label="Issue map">${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select>` : ""}
         </span>
-        <button class="akt-send" aria-label="File issue" title="File issue (⌘↵)" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span><span class="akt-hint">⌘↵</span></button>
+        <button class="akt-send" aria-label="File issue" title="File issue (${MOD_LABEL})" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span><span class="akt-hint">${MOD_LABEL}</span></button>
       </div>`);
 
     const panel = this.panel!;

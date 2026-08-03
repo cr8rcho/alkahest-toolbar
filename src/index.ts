@@ -12,7 +12,7 @@
 // account. Regular visitors see nothing.
 import { isActivated, pickUpHandoffCode } from "./auth";
 import { resolveConfig, type ToolbarConfig } from "./config";
-import { Toolbar } from "./panel";
+import { hasDraft, Toolbar } from "./panel";
 
 export type { ToolbarConfig };
 
@@ -23,10 +23,16 @@ export async function init(config: ToolbarConfig): Promise<void> {
   const cfg = resolveConfig(config);
   // Exchange a returning consent code BEFORE the activation check — a successful
   // exchange stores the token, which is itself the activation signal.
-  await pickUpHandoffCode(cfg).catch(() => false);
+  const returned = await pickUpHandoffCode(cfg).catch(() => false);
   if (!isActivated()) return;
   mounted = true;
-  const mount = () => new Toolbar(cfg);
+  // Someone who signed in mid-issue lands back on the page they were reporting: open the
+  // composer for them rather than making them find the bubble again. Their text is already
+  // in it — the draft store, not this, is what kept it.
+  const mount = () => {
+    const bar = new Toolbar(cfg);
+    if (returned && hasDraft(cfg)) bar.open();
+  };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", mount, { once: true });
   } else {

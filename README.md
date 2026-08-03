@@ -72,9 +72,9 @@ init({
 2. **Scoped token.** Approving returns a one-time code (5-minute TTL, single-use) in the
    URL fragment — it never reaches your server logs. The toolbar exchanges it for a
    **scoped token** that can create issues and list maps, *nothing else* — it cannot
-   publish maps, read comments, or touch anything destructive — and it expires in
-   30 days. It appears on the account **Tokens** page as `widget: <your origin>`, where
-   it can be revoked at any time.
+   publish maps, read comments, or touch anything destructive. It appears on the account
+   **Tokens** page as `widget: <your origin>`, where it can be revoked at any time —
+   revoking is what ends it, and the toolbar notices on the next page load.
 3. **File.** The form is title + details. The toolbar attaches the facts automatically:
    the current route becomes the issue's `route` target, and the full URL + user agent
    ride along in the body. A route is a fact, not a guess — matching it to a code-map
@@ -169,9 +169,13 @@ Filing an issue is a compose task, not a form to fill in, so the panel is writte
 - **Nothing secret is embedded.** The project slug is public routing data.
 - **Auth is per-user.** Every report is created as the signed-in Alkahest account, gated
   by that user's actual project permissions (editor access is required to file).
-- **The stored token is scoped and expiring.** It lives in your site's `localStorage`, so
-  an XSS on *your* site could read it — which is exactly why it can only create issues
-  and list maps, and dies after 30 days. Revoke any time from the Tokens page.
+- **The stored token is scoped, and revocable.** It lives in your site's `localStorage`, so
+  an XSS on *your* site could read it — which is exactly why it can only create issues and
+  list maps. It does not expire on a timer (that only cost people a re-login every month);
+  revoking it on the Tokens page is what kills it, immediately.
+- **Drafts stay on the device.** What you type is kept in `localStorage` until the issue is
+  filed, so a closed panel, a reload or a signed-out session can't lose it. Nothing is sent
+  anywhere until you press send.
 - **The one-time code returns in the URL fragment**, not a query param — fragments are
   never sent to servers, so the code stays out of logs. It's single-use and expires in
   5 minutes regardless.

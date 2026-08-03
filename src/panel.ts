@@ -74,6 +74,9 @@ const CSS = `
 .akt-body[data-center]{align-items:center;justify-content:center;text-align:center;gap:14px;padding:22px}
 .akt-msg{margin:0;font-size:15px;color:var(--c-muted);max-width:28ch}
 .akt-msg b{color:var(--c-ink);font-weight:600}
+/* Second line of a two-line message: the reassurance under the instruction, quieter than it. */
+.akt-sub{display:block;margin-top:6px;font-size:13px;opacity:.8}
+.akt-sub .akt-ok{color:var(--c-ok);margin-right:4px}
 .akt-tick{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;background:color-mix(in srgb,var(--c-ok) 18%,transparent);color:var(--c-ok)}
 .akt-body:not([data-center]){padding:14px;gap:6px}
 .akt-head .akt-route-h{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:400;color:var(--c-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -85,6 +88,9 @@ const CSS = `
 .akt-body .akt-title::placeholder,.akt-body .akt-desc::placeholder{color:var(--c-muted)}
 .akt-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-top:1px solid var(--c-line);flex:none}
 .akt-barleft{display:flex;align-items:center;gap:10px;min-width:0}
+/* "Draft restored", in the bar's left slot until the first keystroke. */
+.akt-note{font-size:12px;color:var(--c-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.akt-note .akt-ok{color:var(--c-ok);margin-right:5px}
 .akt-chip{appearance:none;-webkit-appearance:none;border:1px solid var(--c-line);border-radius:999px;padding:5px 11px;font:inherit;font-size:12px;color:var(--c-muted);background:transparent;max-width:150px;outline:none}
 /* No visible shortcut hint. It was tried twice — beside the button, then inside it — and read as
    clutter both times on a control whose whole point was to stop being one. Cmd/Ctrl+Enter still
@@ -113,10 +119,13 @@ const CSS = `
 .akt-body .akt-title{font-size:17px}
 .akt-body .akt-desc{font-size:16px;min-height:0}
 .akt-bar{padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px))}
-.akt-send{gap:0}
-.akt-send{width:36px;height:36px;padding:0;border-radius:10px}
-.akt-send .akt-send-icon{display:block}
-.akt-send .akt-send-text{display:none}
+/* ONLY the composer's send button collapses to an icon. .akt-send is the primary button in
+   every state (Sign in, Done, Turn off, Close), and those carry their label as bare text, not
+   in an .akt-send-text span — squaring them to 36px wrapped "Sign in" into two lines that
+   spilled out of the box. The composer's button opts in with .akt-icon. */
+.akt-send.akt-icon{gap:0;width:36px;height:36px;padding:0;border-radius:10px}
+.akt-send.akt-icon .akt-send-icon{display:block}
+.akt-send.akt-icon .akt-send-text{display:none}
 .akt-body input,.akt-body textarea,.akt-body select{font-size:16px}
 .akt-body input,.akt-body select{height:38px;padding:0 12px}
 .akt-body textarea{min-height:88px;padding:9px 12px}
@@ -158,11 +167,55 @@ const MOD_LABEL = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.us
 // the bottom center; the drag arms when the button's center comes within ARM_RADIUS of it.
 const ARM_RADIUS = 72;
 
+// What the composer is holding, kept in localStorage on every keystroke and dropped once the
+// issue is filed. Deliberately NOT tied to the sign-out path: an unsent draft can be lost to a
+// closed panel, a reload or a dead tab just as easily as to an expired session, and a store
+// that always holds the current text answers all of them with the same ten lines.
+type Draft = { title: string; details: string };
+const draftKey = (cfg: ResolvedConfig) => `alkahest.toolbar.draft:${cfg.project}`;
+
+function readDraft(cfg: ResolvedConfig): Draft | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(draftKey(cfg)) || "");
+    return d && (d.title || d.details) ? { title: d.title || "", details: d.details || "" } : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(cfg: ResolvedConfig, d: Draft): void {
+  try {
+    if (d.title || d.details) localStorage.setItem(draftKey(cfg), JSON.stringify(d));
+    else localStorage.removeItem(draftKey(cfg));
+  } catch {
+    /* storage unavailable — the composer still works, it just can't be recovered */
+  }
+}
+
+export function hasDraft(cfg: ResolvedConfig): boolean {
+  return readDraft(cfg) !== null;
+}
+
+function clearDraft(cfg: ResolvedConfig): void {
+  try { localStorage.removeItem(draftKey(cfg)); } catch { /* storage unavailable */ }
+}
+
+// Is this the server saying the token is no longer a session? Anything else (a network blip,
+// a 500) is NOT a logout — signing someone out over a dropped packet is worse than the check
+// missing a revocation until the next page load.
+const isAuthError = (e: unknown) =>
+  e instanceof ApiError && (e.code === "token_expired" || e.code === "invalid_token");
+
+type SessionState = "ok" | "signed-out";
+
 export class Toolbar {
   private root: ShadowRoot;
   private host: HTMLDivElement;
   private panel: HTMLDivElement | null = null;
   private maps: IssueMapOption[] | null = null;
+  // The session check, fired once at mount — see checkSession().
+  private session: Promise<SessionState> = Promise.resolve("ok");
+  private sessionState: SessionState | null = null;
   private btn: HTMLButtonElement;
   private dismiss: HTMLDivElement;
   private pos: ButtonPos = { side: "right", bottom: 16 };
@@ -225,6 +278,29 @@ export class Toolbar {
     }
     window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", this.onScheme);
     this.wireDrag();
+    this.session = this.checkSession();
+  }
+
+  // Ask once, at page load, instead of when the panel opens. `/maps` is the only read this
+  // token's scope allows, so it doubles as the session check — and by the time the bubble is
+  // tapped the answer is usually already here, which is what lets the composer open BOTH
+  // instantly and verified. Checking at open-time leaked two ways: the composer is up before
+  // the answer lands (so a 401 either interrupts a half-written sentence or waits for send),
+  // and the call itself was conditional — skipped when the host pins `issueMap`, and cached
+  // after the first open, so the second open of a page checked nothing at all.
+  private checkSession(): Promise<SessionState> {
+    const token = getToken();
+    const settle = (s: SessionState) => { this.sessionState = s; return s; };
+    if (!token) return Promise.resolve(settle("signed-out"));
+    return listIssueMaps(this.cfg, token).then(
+      (maps) => { this.maps = maps; return settle("ok"); },
+      (e) => settle(isAuthError(e) ? "signed-out" : "ok"),
+    );
+  }
+
+  // Opened from outside: the visitor is back from /widget-auth with a draft waiting.
+  open(): void {
+    if (!this.panel) this.toggle();
   }
 
   // Which theme to wear. The host PAGE decides, not the OS — a widget that reads only
@@ -464,6 +540,7 @@ export class Toolbar {
     });
     this.panel!.querySelector(".akt-send")!.addEventListener("click", () => {
       deactivate();
+      clearDraft(this.cfg); // turning the toolbar off shouldn't leave text behind on this browser
       this.destroy();
     });
   }
@@ -487,44 +564,40 @@ export class Toolbar {
       this.frame(`<p class="akt-msg">Signing in…</p>`, { center: true });
       await pickUpHandoffCode(this.cfg).catch(() => false);
       if (!this.panel) return; // closed while exchanging
+      // A fresh token means the mount-time verdict is stale — ask again with the new one.
+      this.sessionState = null;
+      this.session = this.checkSession();
+    }
+    // The mount-time check has usually settled long before the bubble is tapped. When it hasn't
+    // — the panel opened within a few hundred ms of page load — this is the one moment worth
+    // waiting on, and the wait costs nothing: the shell is the same size in every state, so
+    // there is no sliver to flash (which is what sank the old "Loading…" state).
+    if (this.sessionState === null) {
+      this.frame(`<p class="akt-msg">Checking…</p>`, { center: true });
+      await this.session;
+      if (!this.panel) return; // closed while checking
     }
     const token = getToken();
-    if (!token) {
-      this.frame(
-        `<p class="akt-msg">Sign in with your Alkahest account to file issues for <b>${esc(this.cfg.project)}</b> from this page.</p>`,
-        { center: true, bar: `<div class="akt-bar"><span class="akt-barleft"></span><button class="akt-send">Sign in</button></div>` },
-      );
-      this.panel!.querySelector(".akt-send")!.addEventListener("click", () => {
-        location.href = signInUrl(this.cfg);
-      });
-      return;
-    }
+    if (!token || this.sessionState === "signed-out") return this.signedOut();
 
-    // The map list is only needed to DRAW the picker — sending without a map is fine, the server
-    // resolves the project's sole issue map (ADR-011). So the composer opens immediately and the
-    // chip appears later if there turns out to be a choice; the "Loading…" state is gone. On a
-    // project with one issue map (ours) it was a 97px sliver that flashed for nothing.
+    // The map list came back with the session check, so the picker is there from the first
+    // frame. Sending without a map is fine either way — the server resolves the project's sole
+    // issue map (ADR-011).
     const pickable = !this.cfg.issueMap && (this.maps?.length ?? 0) > 1;
-    if (this.maps === null && !this.cfg.issueMap) {
-      listIssueMaps(this.cfg, token)
-        .then((maps) => {
-          this.maps = maps;
-          if (this.panel && maps.length > 1 && !this.panel.querySelector(".akt-chip")) this.mountMapChip();
-        })
-        .catch(() => { /* the picker simply never appears; sending still resolves server-side */ });
-    }
 
     // No labels on screen, so the fields carry their names in aria-label. The bar holds what the
     // form's last row used to: the map picker (only when there is a choice) and the send button.
+    const draft = readDraft(this.cfg);
     const body = this.frame(`
       <input class="akt-title" maxlength="200" aria-label="Title" placeholder="What's wrong?">
       <textarea class="akt-desc" aria-label="Description" placeholder="What did you expect? What happened?"></textarea>
       <p class="akt-err" hidden></p>`,
       { bar: `<div class="akt-bar">
         <span class="akt-barleft">
-          ${pickable ? `<select class="akt-chip" aria-label="Issue map">${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select>` : ""}
+          ${pickable ? `<select class="akt-chip" aria-label="Issue map">${this.maps!.map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`).join("")}</select>`
+            : draft ? `<span class="akt-note"><span class="akt-ok">✓</span>Draft restored</span>` : ""}
         </span>
-        <button class="akt-send" aria-label="File issue" title="File issue (${MOD_LABEL})" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span></button>
+        <button class="akt-send akt-icon" aria-label="File issue" title="File issue (${MOD_LABEL})" disabled><span class="akt-send-icon">➤</span><span class="akt-send-text">File issue</span></button>
       </div>` });
 
     const panel = this.panel!;
@@ -533,10 +606,23 @@ export class Toolbar {
     const descEl = body.querySelector(".akt-desc") as HTMLTextAreaElement;
     const submit = panel.querySelector(".akt-send") as HTMLButtonElement;
 
+    if (draft) {
+      titleEl.value = draft.title;
+      descEl.value = draft.details;
+    }
+
     // Nothing to send without a title, so the button says so instead of an error message after
     // the fact. (The old form only found out on click.)
     const sync = () => { submit.disabled = !titleEl.value.trim(); };
+    sync();
+    // Every keystroke is kept, so nothing typed here depends on the send succeeding.
+    const keep = () => {
+      writeDraft(this.cfg, { title: titleEl.value, details: descEl.value });
+      panel.querySelector(".akt-note")?.remove(); // the restore notice has been read by now
+    };
     titleEl.addEventListener("input", sync);
+    titleEl.addEventListener("input", keep);
+    descEl.addEventListener("input", keep);
     // Enter on the title line moves to the description — a title is one line by definition.
     titleEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); descEl.focus(); }
@@ -560,6 +646,7 @@ export class Toolbar {
           details: descEl.value.trim(),
           mapSlug: this.cfg.issueMap ?? (panel.querySelector(".akt-chip") as HTMLSelectElement | null)?.value ?? null,
         });
+        clearDraft(this.cfg); // it's on the server now
         this.filed();
       } catch (e) {
         this.fail(e, body, submit);
@@ -578,21 +665,29 @@ export class Toolbar {
     this.doneTimer = window.setTimeout(() => this.close(), wait);
   }
 
-  // The map picker arrives after the composer is already on screen (see render).
-  private mountMapChip() {
-    const left = this.panel?.querySelector(".akt-barleft");
-    if (!left || !this.maps) return;
-    left.innerHTML = `<select class="akt-chip" aria-label="Issue map">${this.maps
-      .map((m) => `<option value="${esc(m.slug)}">${esc(m.name || m.slug)}</option>`)
-      .join("")}</select>`;
+  // Sign-in, in the two situations it comes up. Arriving here from a failed send (`again`) is
+  // the rarer one now that the check runs at mount — a token revoked mid-compose, or a page
+  // left open long enough for the load-time answer to go stale. Either way the draft is already
+  // on disk, and saying so matters here specifically: signing in LEAVES the page.
+  private signedOut(again = false) {
+    this.frame(
+      again
+        ? `<p class="akt-msg">Please sign in again.<span class="akt-sub"><span class="akt-ok">✓</span>Your draft is saved.</span></p>`
+        : `<p class="akt-msg">Sign in with your Alkahest account to file issues for <b>${esc(this.cfg.project)}</b> from this page.</p>`,
+      { center: true, bar: `<div class="akt-bar"><span class="akt-barleft"></span><button class="akt-send">Sign in</button></div>` },
+    );
+    this.panel!.querySelector(".akt-send")!.addEventListener("click", () => {
+      location.href = signInUrl(this.cfg);
+    });
   }
 
   // Expired/revoked token → drop it and fall back to the sign-in state; other errors
   // surface inline (keeping the form) when we have one, else replace the panel body.
   private fail(e: unknown, body?: HTMLDivElement, submit?: HTMLButtonElement) {
-    if (e instanceof ApiError && (e.code === "token_expired" || e.code === "invalid_token")) {
+    if (isAuthError(e)) {
       clearToken();
-      this.render();
+      this.sessionState = "signed-out";
+      this.signedOut(true);
       return;
     }
     const msg = e instanceof Error ? e.message : "Something went wrong.";
